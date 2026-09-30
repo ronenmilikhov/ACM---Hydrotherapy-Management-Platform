@@ -1,14 +1,15 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform, StatusBar, I18nManager } from 'react-native';
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#001529',
+    paddingTop: Platform.OS === 'ios' ? 44 : (Platform.OS === 'android' ? StatusBar.currentHeight : 0),
   },
   scrollContent: {
     paddingHorizontal: 12,
-    paddingTop: 24,
-    paddingBottom: 30,
+    paddingTop: 8,
+    paddingBottom: 48,
   },
   mainCard: {
     borderRadius: 24,
@@ -22,19 +23,19 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 26,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   rangeText: {
     marginTop: 6,
     color: 'rgba(255,255,255,0.68)',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   controlsRow: {
     marginTop: 10,
-    flexDirection: 'row-reverse',
+    flexDirection: I18nManager.isRTL ? 'row' : 'row-reverse',
   },
   secondaryControlButton: {
     minWidth: 130,
@@ -50,7 +51,6 @@ const styles = StyleSheet.create({
     color: '#d9f7ff',
     fontSize: 13,
     fontWeight: '700',
-    writingDirection: 'rtl',
   },
   groupCard: {
     marginTop: 12,
@@ -70,20 +70,20 @@ const styles = StyleSheet.create({
   },
   groupHeaderMain: {
     flex: 1,
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
   },
   groupName: {
     color: '#f2fbff',
     fontSize: 18,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
   groupMetaText: {
     marginTop: 2,
     color: 'rgba(255,255,255,0.66)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
   groupInactiveText: {
@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
     color: '#ff9f9f',
     fontSize: 12,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
   groupAttendanceWrap: {
@@ -108,7 +108,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.72)',
     fontSize: 11,
     textAlign: 'center',
-    writingDirection: 'rtl',
   },
   groupAttendanceValue: {
     marginTop: 2,
@@ -128,7 +127,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     textAlign: 'center',
-    writingDirection: 'rtl',
   },
   childrenPanel: {
     borderTopWidth: 1,
@@ -170,37 +168,39 @@ const styles = StyleSheet.create({
     color: '#ffabab',
     fontSize: 12,
     textAlign: 'center',
-    writingDirection: 'rtl',
   },
   childMetaWrap: {
     flex: 1,
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
   },
   childName: {
     color: '#ecfaff',
     fontSize: 16,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
   childMetaText: {
     marginTop: 3,
     color: 'rgba(255,255,255,0.66)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
+    writingDirection: 'rtl',
   },
   listStateText: {
     marginTop: 10,
     color: 'rgba(255,255,255,0.66)',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   errorText: {
     marginTop: 10,
     color: '#ff9b9b',
     fontSize: 14,
-    textAlign: 'right',
+    alignSelf: 'stretch',
+    width: '100%',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
 });

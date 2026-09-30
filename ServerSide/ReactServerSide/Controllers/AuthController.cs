@@ -28,7 +28,7 @@ namespace ReactServerSide.Controllers
                 return BadRequest(new { message = "יש להזין אימייל וסיסמה." });
             }
 
-            string normalizedEmail = request.Email.Trim().ToLowerInvariant();
+            string normalizedEmail = System.Text.RegularExpressions.Regex.Replace(request.Email, @"[\u200B-\u200D\u200E\u200F\uFEFF]", "").Trim().ToLowerInvariant();
 
             AuthenticatedUser? user = _db.PostAuthenticateUser(normalizedEmail, request.Password);
             if (user != null)

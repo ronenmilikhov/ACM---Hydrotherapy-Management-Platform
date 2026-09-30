@@ -349,17 +349,17 @@ export default function ParentLessonHistory({ route }) {
       <View style={styles.backgroundGradient}>
         <LinearGradient
           colors={['#00aed8', '#007fa7', '#004d73']}
-          style={styles.backgroundGradient}
+          style={{ flex: 1 }}
         />
       </View>
 
       <BlurView intensity={20} tint="dark" style={styles.navbar}>
         <TouchableOpacity
           style={styles.logoutBtn}
-          activeOpacity={0.7}
+          activeOpacity={0.75}
           onPress={handleBackPress}
         >
-          <Text style={styles.logoutBtnText}>‹ חזרה</Text>
+          <Text style={styles.logoutBtnText}>›</Text>
         </TouchableOpacity>
 
         <View style={styles.navCenter}>
@@ -369,25 +369,7 @@ export default function ParentLessonHistory({ route }) {
           <Text style={styles.navTitle}>היסטוריית שיעורים</Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.navBellWrap}
-          activeOpacity={0.7}
-          onPress={openNotificationsInbox}
-        >
-          <View style={styles.navBellContent}>
-            <Text style={styles.navBellLabel}>התראות</Text>
-
-            <View style={styles.navBellIconWrap}>
-              <Text style={styles.navBell}>🔔</Text>
-
-              {unreadNotificationCount > 0 ? (
-                <View style={styles.navBadge}>
-                  <Text style={styles.navBadgeText}>{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        </TouchableOpacity>
+        <View style={{ width: 42 }} />
       </BlurView>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -454,8 +436,8 @@ export default function ParentLessonHistory({ route }) {
             lessonSections.map((section) => (
               <BlurView key={`section-${section.childId}`} intensity={16} tint="dark" style={styles.childSectionCard}>
                 <View style={styles.childSectionHeader}>
-                  <Text style={styles.childSectionCount}>{section.lessons.length} שיעורים</Text>
                   <Text style={styles.childSectionTitle}>{section.childName}</Text>
+                  <Text style={styles.childSectionCount}>{section.lessons.length} שיעורים</Text>
                 </View>
 
                 {section.lessons.length === 0 ? (
@@ -464,6 +446,11 @@ export default function ParentLessonHistory({ route }) {
                   section.lessons.map((lesson) => (
                     <View key={`lesson-${section.childId}-${lesson.sessionId}`} style={styles.lessonCard}>
                       <View style={styles.lessonHeaderRow}>
+                        <Text style={styles.lessonDate}>
+                          {lesson.weekday ? `${lesson.weekday}, ` : ''}
+                          {formatLessonDate(lesson.meetingDate)}
+                        </Text>
+
                         <View
                           style={[
                             styles.lessonTypeBadge,
@@ -472,11 +459,6 @@ export default function ParentLessonHistory({ route }) {
                         >
                           <Text style={styles.lessonTypeBadgeText}>{lesson.lessonTypeLabel}</Text>
                         </View>
-
-                        <Text style={styles.lessonDate}>
-                          {lesson.weekday ? `${lesson.weekday}, ` : ''}
-                          {formatLessonDate(lesson.meetingDate)}
-                        </Text>
                       </View>
 
                       <Text style={styles.lessonLine}>שעה: {lesson.startTime || '--:--'} - {lesson.endTime || '--:--'}</Text>

@@ -1,8 +1,13 @@
 import 'react-native-gesture-handler';
 import React, { useCallback, useEffect, useRef } from 'react';
+import { I18nManager } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
+// Force RTL layout for Hebrew.
+I18nManager.allowRTL(true);
+I18nManager.forceRTL(true);
 import InstructorHomepage from './Instructor/InstructorHomepage';
 import SelectGroup from './Instructor/SelectGroup';
 import GroupDetails from './Instructor/GroupDetails';
@@ -22,6 +27,7 @@ import InstructorLessonScheduler from './Instructor/InstructorLessonScheduler';
 import InstructorLessonBoard from './Instructor/InstructorLessonBoard';
 import InstructorNotificationsInbox from './Instructor/InstructorNotificationsInbox';
 import ParentNotificationsInbox from './Parent/ParentNotificationsInbox';
+import InstructorAIGroupReports from './Instructor/InstructorAIGroupReports';
 import {
   initializeNotifications,
   addNotificationReceivedListener,
@@ -249,6 +255,7 @@ export default function App() {
           <Stack.Screen name="InstructorLessonScheduler" component={InstructorLessonScheduler} />
           <Stack.Screen name="InstructorLessonBoard" component={InstructorLessonBoard} />
           <Stack.Screen name="InstructorNotificationsInbox" component={InstructorNotificationsInbox} />
+          <Stack.Screen name="InstructorAIGroupReports" component={InstructorAIGroupReports} />
           <Stack.Screen name="ParentNotificationsInbox" component={ParentNotificationsInbox} />
         </Stack.Navigator>
       </NavigationContainer>

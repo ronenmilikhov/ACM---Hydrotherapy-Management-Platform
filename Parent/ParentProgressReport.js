@@ -40,7 +40,7 @@ const initialRows = [
 ];
 
 const RATING_MIN = 0;
-const RATING_MAX = 10;
+const RATING_MAX = 5;
 
 const normalizeProgressValue = (rawValue) => {
   if (!Number.isFinite(rawValue)) return RATING_MIN;
@@ -86,10 +86,23 @@ const buildMedianMetrics = (reports, metricsTemplate) => {
   );
 
   (Array.isArray(reports) ? reports : []).forEach((report) => {
-    const parsedNotes = parseNotesObject(report?.notes);
-    const metricsList = Array.isArray(parsedNotes?.metrics) ? parsedNotes.metrics : [];
+    let metricsList = [];
+    if (Array.isArray(report?.metrics)) {
+      metricsList = report.metrics;
+    } else if (typeof report?.metrics === 'string' && report.metrics.trim()) {
+      try {
+        metricsList = JSON.parse(report.metrics);
+      } catch (e) { }
+    }
+
+    if (!Array.isArray(metricsList) || metricsList.length === 0) {
+      const parsedNotes = parseNotesObject(report?.notes || report?.Notes);
+      metricsList = Array.isArray(parsedNotes?.metrics) ? parsedNotes.metrics : [];
+    }
 
     metricsList.forEach((metric, index) => {
+      if (metric?.isIncluded === false) return;
+
       const rawValue = Number(metric?.value);
       if (!Number.isFinite(rawValue)) return;
 
@@ -117,6 +130,11 @@ const buildMedianMetrics = (reports, metricsTemplate) => {
 };
 
 const extractInstructorComment = (report) => {
+  const comment = String(report?.comment || report?.Comment || '').trim();
+  if (comment) {
+    return comment;
+  }
+
   const parsedNotes = parseNotesObject(report?.notes);
 
   if (parsedNotes && typeof parsedNotes.comment === 'string' && parsedNotes.comment.trim()) {
@@ -382,7 +400,7 @@ const buildPdfReportHtml = ({ childName, instructorName, metrics, latestComments
       <div class="metric-item">
         <div class="metric-head">
           <div class="metric-label">${escapeHtml(item.label)}</div>
-          <div class="metric-value">${normalizedValue}/10</div>
+          <div class="metric-value">${normalizedValue}/5</div>
         </div>
         <div class="metric-track">
           <div class="metric-fill" style="width:${percent}%;">
@@ -568,117 +586,6 @@ const Wave = ({ color, duration, startPosition, d }) => {
   );
 };
 
-const Bubble = () => {
-  const progress = useRef(new Animated.Value(0)).current;
-  const sway = useRef(new Animated.Value(0)).current;
-
-  const [config, setConfig] = useState({
-    size: Math.random() * 30 + 10,
-    left: Math.random() * width,
-  });
-
-  const durationRef = useRef(Math.random() * 16000 + 14000);
-  const isFirstRun = useRef(true);
-
-  const startFloat = () => {
-    progress.setValue(0);
-    const delay = isFirstRun.current ? Math.random() * 30000 : 0;
-    isFirstRun.current = false;
-
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: durationRef.current,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        durationRef.current = Math.random() * 16000 + 14000;
-        setConfig({
-          size: Math.random() * 30 + 10,
-          left: Math.random() * width,
-        });
-        startFloat();
-      }
-    });
-  };
-
-  useEffect(() => {
-    startFloat();
-    const swayAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(sway, {
-          toValue: 1,
-          duration: 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(sway, {
-          toValue: -1,
-          duration: 4000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(sway, {
-          toValue: 0,
-          duration: 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    swayAnim.start();
-
-    return () => {
-      progress.stopAnimation();
-      sway.stopAnimation();
-    };
-  }, [progress, sway]);
-
-  const translateY = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [height + 50, -150],
-  });
-
-  const opacity = progress.interpolate({
-    inputRange: [0, 0.1, 0.8, 1],
-    outputRange: [0, 1, 1, 0],
-  });
-
-  const translateX = sway.interpolate({
-    inputRange: [-1, 1],
-    outputRange: [-20, 20],
-  });
-
-  return (
-    <Animated.View
-      style={[
-        styles.bubbleWrapper,
-        {
-          width: config.size,
-          height: config.size,
-          borderRadius: config.size / 2,
-          left: config.left,
-          transform: [{ translateY }, { translateX }],
-          opacity,
-        },
-      ]}
-    >
-      <LinearGradient
-        colors={['rgba(255, 255, 255, 0.95)', 'rgba(255, 255, 255, 0.1)']}
-        style={{
-          flex: 1,
-          borderRadius: config.size / 2,
-          borderWidth: 1,
-          borderColor: 'rgba(255, 255, 255, 0.4)',
-        }}
-      />
-    </Animated.View>
-  );
-};
-
 const ProgressBar = ({ label, value }) => {
   const normalizedValue = normalizeProgressValue(Number(value));
   const percentFraction = normalizedValue / RATING_MAX;
@@ -688,7 +595,7 @@ const ProgressBar = ({ label, value }) => {
     <View style={styles.progressItem}>
       <View style={styles.progressLabelRow}>
         <Text style={styles.progressLabel}>{label}</Text>
-        <Text style={styles.progressPercent}>{normalizedValue}/10</Text>
+        <Text style={styles.progressPercent}>{normalizedValue}/5</Text>
       </View>
 
       <View style={styles.progressTrack}>
@@ -726,7 +633,6 @@ export default function ParentProgressReport({ route, navigation }) {
   const [aiSummarySource, setAiSummarySource] = useState('');
   const [summaryWarning, setSummaryWarning] = useState('');
   const [isSummaryWarningError, setIsSummaryWarningError] = useState(false);
-  const bubblePool = useMemo(() => Array.from({ length: 6 }).map((_, i) => i), []);
 
   const authUser = route?.params?.authUser;
   const parentId = Number(route?.params?.parentId || authUser?.id || 0);
@@ -1181,9 +1087,6 @@ export default function ParentProgressReport({ route, navigation }) {
         style={styles.surfaceGlow}
       />
 
-      {bubblePool.map((id) => (
-        <Bubble key={`bubble-${id}`} />
-      ))}
 
       <Wave
         color="rgba(0, 153, 204, 0.3)"
@@ -1204,7 +1107,7 @@ export default function ParentProgressReport({ route, navigation }) {
           activeOpacity={0.7}
           onPress={handleBackPress}
         >
-          <Text style={styles.logoutBtnText}>‹ חזרה</Text>
+          <Text style={styles.logoutBtnText}>‹</Text>
         </TouchableOpacity>
 
         <View style={styles.navCenter}>
@@ -1214,25 +1117,7 @@ export default function ParentProgressReport({ route, navigation }) {
           <Text style={styles.navTitle}>דו״ח התקדמות</Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.navBellWrap}
-          activeOpacity={0.7}
-          onPress={openNotificationsInbox}
-        >
-          <View style={styles.navBellContent}>
-            <Text style={styles.navBellLabel}>התראות</Text>
-
-            <View style={styles.navBellIconWrap}>
-              <Text style={styles.navBell}>🔔</Text>
-
-              {unreadNotificationCount > 0 ? (
-                <View style={styles.navBadge}>
-                  <Text style={styles.navBadgeText}>{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        </TouchableOpacity>
+        <View style={{ width: 42 }} />
       </BlurView>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

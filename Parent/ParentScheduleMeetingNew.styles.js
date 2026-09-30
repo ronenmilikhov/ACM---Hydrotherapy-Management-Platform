@@ -1,4 +1,4 @@
-import { StyleSheet, StatusBar } from 'react-native';
+import { StyleSheet, StatusBar, Platform } from 'react-native';
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -29,20 +29,20 @@ const styles = StyleSheet.create({
   },
 
   header: {
-    paddingTop: (StatusBar.currentHeight || 0) + 14,
+    paddingTop: (StatusBar.currentHeight || 0) + 10,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
   },
   backButton: {
-    width: 44,
-    height: 44,
+    width: 38,
+    height: 38,
     alignItems: 'center',
     justifyContent: 'center',
   },
   backButtonIcon: {
-    fontSize: 42,
-    lineHeight: 44,
+    fontSize: 28,
+    lineHeight: 30,
     color: '#121212',
   },
   headerCenter: {
@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: '#204A78',
-    fontSize: 30,
+    fontSize: 22,
     fontWeight: '700',
     writingDirection: 'rtl',
   },
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FBFF',
     borderRadius: 12,
     minHeight: 56,
-    flexDirection: 'row-reverse',
+    flexDirection: Platform.OS === 'ios' ? 'row-reverse' : 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
     marginBottom: 10,

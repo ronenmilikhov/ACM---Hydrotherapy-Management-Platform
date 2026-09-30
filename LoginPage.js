@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   StyleSheet, Text, View, Animated, Dimensions, TouchableOpacity,
-  TextInput, StatusBar, Easing, KeyboardAvoidingView, Platform, Alert, Switch
+  TextInput, StatusBar, Easing, KeyboardAvoidingView, Platform, Alert, Switch, Modal
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path } from 'react-native-svg';
 import PrimaryButton from './components/ui/PrimaryButton';
 import AppCard from './components/ui/AppCard';
+import LoginLoadingOverlay from './components/ui/LoginLoadingOverlay';
 import { colors, radius, shadows } from './theme/tokens';
 import { API_BASE_URL } from './apiConfig';
 
@@ -57,119 +58,6 @@ const Wave = ({ color, duration, startPosition, d }) => {
   );
 };
 
-// ========================================
-// 2. TRULY INFINITE REINCARNATING BUBBLES
-// ========================================
-const Bubble = () => {
-  const progress = useRef(new Animated.Value(0)).current;
-  const sway = useRef(new Animated.Value(0)).current;
-
-  const [config, setConfig] = useState({
-    size: Math.random() * 30 + 10,
-    left: Math.random() * width,
-  });
-
-  const durationRef = useRef(Math.random() * 16000 + 14000);
-  const isFirstRun = useRef(true);
-
-  const startFloat = () => {
-    progress.setValue(0);
-    const delay = isFirstRun.current ? Math.random() * 30000 : 0;
-    isFirstRun.current = false;
-
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: durationRef.current,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        durationRef.current = Math.random() * 16000 + 14000;
-        setConfig({
-          size: Math.random() * 30 + 10,
-          left: Math.random() * width,
-        });
-        startFloat();
-      }
-    });
-  };
-
-  useEffect(() => {
-    startFloat();
-    const swayAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(sway, {
-          toValue: 1,
-          duration: 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(sway, {
-          toValue: -1,
-          duration: 4000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(sway, {
-          toValue: 0,
-          duration: 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    swayAnim.start();
-
-    return () => {
-      progress.stopAnimation();
-      sway.stopAnimation();
-    };
-  }, []);
-
-  const translateY = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [height + 50, -150],
-  });
-
-  const opacity = progress.interpolate({
-    inputRange: [0, 0.1, 0.8, 1],
-    outputRange: [0, 1, 1, 0],
-  });
-
-  const translateX = sway.interpolate({
-    inputRange: [-1, 1],
-    outputRange: [-20, 20],
-  });
-
-  return (
-    <Animated.View
-      style={[
-        styles.bubbleWrapper,
-        {
-          width: config.size,
-          height: config.size,
-          borderRadius: config.size / 2,
-          left: config.left,
-          transform: [{ translateY }, { translateX }],
-          opacity,
-        },
-      ]}
-    >
-      <LinearGradient
-        colors={["rgba(255, 255, 255, 0.95)", "rgba(255, 255, 255, 0.1)"]}
-        style={{
-          flex: 1,
-          borderRadius: config.size / 2,
-          borderWidth: 1,
-          borderColor: "rgba(255, 255, 255, 0.4)",
-        }}
-      />
-    </Animated.View>
-  );
-};
 
 export default function LoginPage({ navigation }) {
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -180,25 +68,48 @@ export default function LoginPage({ navigation }) {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const bubblePool = useMemo(() => Array.from({ length: 6 }).map((_, i) => i), []);
+  // Login overlay state
+  const [loginOverlayVisible, setLoginOverlayVisible] = useState(false);
+  const [loginStatus, setLoginStatus] = useState('loading');    // 'loading' | 'success' | 'error'
+  const [loginMessage, setLoginMessage] = useState('');
+  const pendingNavRef = useRef(null);  // store pending navigation
+
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [resetStep, setResetStep] = useState('email');
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
 
   const isFormValid = useMemo(() => email.trim().length > 0 && password.length > 0, [email, password]);
 
-  const handleLogin = async () => {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || !password) return;
+  const handleLogin = useCallback(async (e = null, optEmail = null, optPassword = null) => {
+    const actualEmail = (typeof optEmail === 'string' ? optEmail : email)
+      .replace(/[\u200B-\u200D\u200E\u200F\uFEFF]/g, '')
+      .trim()
+      .toLowerCase();
+    const actualPassword = typeof optPassword === 'string' ? optPassword : password;
+
+    if (!actualEmail || !actualPassword) return;
+
+    // Show overlay in loading state
+    pendingNavRef.current = null;
+    setLoginStatus('loading');
+    setLoginMessage('מתחבר...');
+    setLoginOverlayVisible(true);
+    setIsSubmitting(true);
 
     try {
-      setIsSubmitting(true);
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, password }),
+        body: JSON.stringify({ email: actualEmail, password: actualPassword }),
       });
 
-      const payload = await response.json();
+      const payload = await response.json().catch(() => null);
 
-      if (!response.ok) {
+      if (!response.ok || !payload) {
         const apiMessage = String(payload?.message || '').trim();
         const normalizedApiMessage = apiMessage.toLowerCase();
         const translatedMessage = (
@@ -208,45 +119,101 @@ export default function LoginPage({ navigation }) {
           ? 'אימייל או סיסמה שגויים.'
           : (apiMessage || 'אימייל או סיסמה שגויים.');
 
-        Alert.alert('פרטי התחברות שגויים', translatedMessage);
+        setLoginStatus('error');
+        setLoginMessage(translatedMessage);
+        // Overlay will self-dismiss via onDismiss callback
         return;
       }
 
       const role = (payload?.role ?? '').toLowerCase();
+      let navTarget = null;
+      let navParams = null;
 
       if (role === 'manager') {
         const managerToken = String(payload?.token || '').trim();
         if (!managerToken) {
-          Alert.alert('שגיאת התחברות', 'לא התקבל אסימון התחברות למנהל. נסו שוב.');
+          setLoginStatus('error');
+          setLoginMessage('לא התקבל אסימון התחברות למנהל.');
           return;
         }
-
-        navigation.replace('ManagerHomepage', {
+        navTarget = 'ManagerHomepage';
+        navParams = {
           managerAuth: {
-            email: normalizedEmail,
+            id: payload?.id,
+            email: actualEmail,
+            fullName: payload?.fullName || 'מנהל',
             token: managerToken,
             tokenExpiresAtUtc: payload?.tokenExpiresAtUtc || null,
           },
-        });
+        };
+      } else if (role === 'instructor') {
+        navTarget = 'InstructorHomepage';
+        navParams = { authUser: payload };
+      } else if (role === 'parent') {
+        navTarget = 'ParentHomepage';
+        navParams = { authUser: payload };
+      } else {
+        setLoginStatus('error');
+        setLoginMessage('לא זוהתה הרשאת משתמש מתאימה.');
         return;
       }
-      if (role === 'instructor') {
-        navigation.replace('InstructorHomepage', { authUser: payload });
-        return;
-      }
-      if (role === 'parent') {
-        navigation.replace('ParentHomepage', { authUser: payload });
-        return;
-      }
-      Alert.alert('שגיאה', 'לא זוהתה הרשאת משתמש מתאימה.');
+
+      // Success!
+      setLoginStatus('success');
+      setLoginMessage('התחברת בהצלחה!');
+      pendingNavRef.current = { screen: navTarget, params: navParams };
+
+      // Navigate after a brief success animation delay
+      setTimeout(() => {
+        setLoginOverlayVisible(false);
+        setIsSubmitting(false);
+        if (pendingNavRef.current) {
+          navigation.replace(pendingNavRef.current.screen, pendingNavRef.current.params);
+          pendingNavRef.current = null;
+        }
+      }, 1500);
+
     } catch (error) {
-      const apiDebugLine = __DEV__ ? `\nכתובת API נוכחית: ${API_BASE_URL}` : '';
-      Alert.alert(
-        'שגיאת שרת',
-        `לא ניתן להתחבר לשרת כרגע. ודאו שה-ServerSide רץ וכתובת ה-API מתאימה לסביבה שלכם.${apiDebugLine}`
-      );
+      setLoginStatus('error');
+      const apiDebugLine = __DEV__ ? `\nכתובת API: ${API_BASE_URL}` : '';
+      setLoginMessage(`שגיאת שרת — לא ניתן להתחבר כרגע.${apiDebugLine}`);
+    }
+  }, [email, password, navigation]);
+
+  const handleOverlayDismiss = useCallback(() => {
+    setLoginOverlayVisible(false);
+    setIsSubmitting(false);
+  }, []);
+
+  const openResetModal = () => {
+    setResetEmail('');
+    setResetModalVisible(true);
+  };
+
+  const handleRequestCode = async () => {
+    if (!resetEmail.trim()) {
+      Alert.alert('שגיאה', 'יש להזין כתובת אימייל.');
+      return;
+    }
+    try {
+      setResetLoading(true);
+      const cleanedResetEmail = resetEmail.replace(/[\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim().toLowerCase();
+      const response = await fetch(`${API_BASE_URL}/PasswordReset/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanedResetEmail }),
+      });
+      const data = await response.json().catch(() => null);
+      if (response.ok) {
+        Alert.alert('נשלח קישור לאיפוס', data?.message || 'אימייל לאיפוס סיסמה נשלח אליך! אנא עקוב אחר ההוראות באימייל שנשלח.');
+        setResetModalVisible(false);
+      } else {
+        Alert.alert('שגיאה', data?.message || 'שגיאה בבקשת איפוס סיסמה. נסו שוב.');
+      }
+    } catch (error) {
+      Alert.alert('שגיאה', 'לא ניתן לשלוח את הבקשה כרגע. נסו שוב מאוחר יותר.');
     } finally {
-      setIsSubmitting(false);
+      setResetLoading(false);
     }
   };
 
@@ -265,13 +232,8 @@ export default function LoginPage({ navigation }) {
 
       {/* Surface Water */}
       <View style={[StyleSheet.absoluteFill]}>
-        <LinearGradient colors={["#00aed8", "#007fa7", "#004d73"]} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={["#00aed8", "#007fa7", "#004d73"]} style={{ flex: 1 }} />
       </View>
-
-      {/* INFINITE BUBBLE POOL */}
-      {bubblePool.map((id) => (
-        <Bubble key={id} />
-      ))}
 
       {/* Bottom Aligned Waves */}
       <Wave
@@ -342,13 +304,13 @@ export default function LoginPage({ navigation }) {
                   style={styles.passwordInput}
                   placeholder="הכניסו סיסמה"
                   placeholderTextColor="rgba(255,255,255,0.4)"
-                  textAlign="left"
+                  textAlign="right"
                   secureTextEntry={!isPasswordVisible}
                   value={password}
                   onChangeText={setPassword}
                 />
                 <TouchableOpacity style={styles.eyeIconButton} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-                  <Text style={styles.eyeIcon}>{isPasswordVisible ? '🙈' : '👁️'}</Text>
+                  <Text style={styles.eyeIcon}>{isPasswordVisible ? '🙈' : '👁'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -363,7 +325,7 @@ export default function LoginPage({ navigation }) {
                 />
                 <Text style={styles.metaText}>זכור אותי</Text>
               </View>
-              <TouchableOpacity activeOpacity={0.8}>
+              <TouchableOpacity activeOpacity={0.8} onPress={openResetModal}>
                 <Text style={styles.forgotText}>שכחת סיסמה?</Text>
               </TouchableOpacity>
             </View>
@@ -373,38 +335,114 @@ export default function LoginPage({ navigation }) {
               style={styles.loginBtn}
               gradientStyle={styles.btnGradient}
               textStyle={styles.primaryBtnText}
-              onPress={handleLogin}
+              onPress={() => handleLogin()}
               disabled={!isFormValid || isSubmitting}
               colorsOverride={
                 (!isFormValid || isSubmitting) ? ['rgba(0,212,255,0.3)', 'rgba(0,153,204,0.3)'] : null
               }
             />
+
+            <View style={styles.quickLoginContainer}>
+              <View style={styles.quickLoginButtons}>
+                <TouchableOpacity 
+                  style={styles.quickLoginBtn} 
+                  onPress={() => {
+                    setEmail('manager@acm.com');
+                    setPassword('123456');
+                    handleLogin(null, 'manager@acm.com', '123456');
+                  }}
+                >
+                  <Text style={styles.quickLoginBtnText}>Manager</Text>
+                </TouchableOpacity>
+
+
+                <TouchableOpacity 
+                  style={styles.quickLoginBtn} 
+                  onPress={() => {
+                    setEmail('christian@gmail.com');
+                    setPassword('123456');
+                    handleLogin(null, 'christian@gmail.com', '123456');
+                  }}
+                >
+                  <Text style={styles.quickLoginBtnText}>Instructor</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.quickLoginBtn} 
+                  onPress={() => {
+                    setEmail('shlomi@gmail.com');
+                    setPassword('123456');
+                    handleLogin(null, 'shlomi@gmail.com', '123456');
+                  }}
+                >
+                  <Text style={styles.quickLoginBtnText}>Parent</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </AppCard>
         </Animated.ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Password Reset Modal */}
+      <Modal visible={resetModalVisible} transparent animationType="fade" onRequestClose={() => setResetModalVisible(false)}>
+        <KeyboardAvoidingView style={styles.resetOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={styles.resetCard}>
+            <Text style={styles.resetTitle}>איפוס סיסמה</Text>
+            <Text style={styles.resetDescription}>
+              הזינו את כתובת האימייל שלכם ונשלח לכם קישור מאובטח לאיפוס הסיסמה.
+            </Text>
+            <TextInput
+              style={styles.resetInput}
+              placeholder="כתובת אימייל"
+              placeholderTextColor="rgba(255,255,255,0.4)"
+              textAlign="right"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={resetEmail}
+              onChangeText={setResetEmail}
+            />
+            <TouchableOpacity style={styles.resetButton} onPress={handleRequestCode} disabled={resetLoading} activeOpacity={0.8}>
+              <LinearGradient colors={['#00d4ff', '#0099cc']} style={styles.resetButtonGradient}>
+                <Text style={styles.resetButtonText}>{resetLoading ? 'שולח...' : 'שלח קישור לאיפוס'}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.resetCancelButton} onPress={() => setResetModalVisible(false)} activeOpacity={0.8}>
+              <Text style={styles.resetCancelText}>ביטול</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ✨ Animated Login Overlay ✨ */}
+      <LoginLoadingOverlay
+        visible={loginOverlayVisible}
+        status={loginStatus}
+        message={loginMessage}
+        onDismiss={handleOverlayDismiss}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bgDeep },
+  container: { flex: 1, backgroundColor: colors.bgDeep, overflow: 'hidden' },
   keyboardWrap: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingTop: 100,
+    paddingTop: 70,
     paddingBottom: 60,
     paddingHorizontal: "5%",
   },
   waveContainer: {
     position: "absolute",
     bottom: 0,
-    left: 0,
+    left: (width - 2400) / 2,
     width: 2400,
     height: 150,
     zIndex: 0,
   },
-  bubbleWrapper: { position: "absolute", zIndex: 1 },
 
   // --- NAVBAR ---
   navbar: {
@@ -412,9 +450,9 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: Platform.OS === "ios" ? 50 : (StatusBar.currentHeight || 20) + 15,
-    paddingBottom: 15,
-    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "ios" ? 42 : (StatusBar.currentHeight || 20) + 6,
+    paddingBottom: 8,
+    paddingHorizontal: 16,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -493,6 +531,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.15)",
     borderRadius: 30, // Pill shaped!
+    writingDirection: 'rtl',
   },
   passwordRow: {
     position: "relative",
@@ -506,9 +545,11 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     paddingVertical: 14,
-    paddingHorizontal: 20,
-    paddingRight: 56,
+    paddingStart: 20,
+    paddingEnd: 56,
     backgroundColor: "transparent",
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
   eyeIconButton: {
     position: "absolute",
@@ -516,9 +557,6 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 50,
-    borderLeftWidth: 1,
-    borderLeftColor: "rgba(255, 255, 255, 0.15)",
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -554,4 +592,93 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   primaryBtnText: { color: "#001529", fontWeight: "bold", fontSize: 16 },
+
+  quickLoginContainer: {
+    marginTop: 20,
+    alignItems: 'center'
+  },
+  quickLoginButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 10
+  },
+  quickLoginBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 10,
+    borderRadius: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)'
+  },
+  quickLoginBtnText: {
+    color: '#00d4ff',
+    fontSize: 12,
+    fontWeight: '600'
+  },
+  resetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 15, 30, 0.85)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  resetCard: {
+    backgroundColor: 'rgba(0, 51, 102, 0.95)',
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.25)',
+  },
+  resetTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  resetDescription: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  resetInput: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.2)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    color: '#fff',
+    fontSize: 15,
+    marginBottom: 12,
+    textAlign: 'right',
+  },
+  resetButton: {
+    marginTop: 8,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  resetButtonGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  resetButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  resetCancelButton: {
+    marginTop: 14,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  resetCancelText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });

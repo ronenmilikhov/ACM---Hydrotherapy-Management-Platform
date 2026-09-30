@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Platform,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -201,12 +202,12 @@ export default function InstructorNotificationsInbox({ navigation, route }) {
 
       <RoleHeader
         title="התראות"
-        subtitle=""
         onMenuPress={() => navigation.goBack()}
-        leftIcon="‹"
+        leftIcon="›"
         rightIcon="↻"
-        rightLabel="רענון"
         onRightPress={() => loadNotifications()}
+        theme="dark"
+        titleStyle={{ color: '#092d42', textShadowColor: 'transparent' }}
       />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -255,14 +256,14 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 24, gap: 12 },
   stateText: {
     color: 'rgba(255,255,255,0.72)',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
     fontSize: 14,
     marginTop: 8,
   },
   errorText: {
     color: '#ff9a8b',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
     fontSize: 14,
     marginTop: 8,
@@ -280,7 +281,7 @@ const styles = StyleSheet.create({
     color: '#8aeaff',
     fontSize: 12,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
     marginBottom: 4,
   },
@@ -288,14 +289,14 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.86)',
     fontSize: 14,
     lineHeight: 21,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
   meta: {
     marginTop: 6,
     color: 'rgba(255,255,255,0.58)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
   actionButtonShell: { marginTop: 10 },

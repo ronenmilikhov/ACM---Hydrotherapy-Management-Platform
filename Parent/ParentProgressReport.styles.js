@@ -1,5 +1,7 @@
-import { StyleSheet, Platform, StatusBar } from 'react-native';
+import { StyleSheet, Platform, StatusBar, Dimensions } from 'react-native';
 import { colors, shadows } from '../theme/tokens';
+
+const { width } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
   container: {
@@ -12,14 +14,10 @@ const styles = StyleSheet.create({
   waveContainer: {
     position: 'absolute',
     bottom: 0,
-    left: 0,
+    left: (width - 2400) / 2,
     width: 2400,
     height: 150,
     zIndex: 0,
-  },
-  bubbleWrapper: {
-    position: 'absolute',
-    zIndex: 1,
   },
 
   navbar: {
@@ -28,9 +26,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 100,
-    paddingTop: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight || 20) + 15,
-    paddingBottom: 14,
-    paddingHorizontal: 18,
+    paddingTop: Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 20) + 6,
+    paddingBottom: 8,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -38,53 +36,52 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   navIconBtn: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     justifyContent: 'center',
     alignItems: 'center',
   },
   logoutBtn: {
-    minWidth: 84,
-    height: 36,
+    width: 42,
+    height: 42,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 10,
   },
   logoutBtnText: {
-    color: '#f3fbff',
-    fontSize: 12,
-    fontWeight: '800',
+    color: '#def6ff',
+    fontSize: 22,
+    textAlign: 'center',
     writingDirection: 'rtl',
   },
   navCenter: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   navLogo: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
   },
   navLogoEmoji: {
-    fontSize: 16,
+    fontSize: 14,
   },
   navTitle: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     writingDirection: 'rtl',
   },
   navBellWrap: {
-    minWidth: 88,
-    height: 40,
-    paddingHorizontal: 6,
+    minWidth: 80,
+    height: 36,
+    paddingHorizontal: 4,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -108,7 +105,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   navBell: {
-    fontSize: 20,
+    fontSize: 18,
   },
   navBadge: {
     position: 'absolute',
@@ -130,10 +127,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 12,
     textAlign: 'center',
+    writingDirection: 'rtl',
   },
 
   scrollContent: {
-    paddingTop: 116,
+    paddingTop: 120,
     paddingBottom: 56,
   },
   hero: {
@@ -177,7 +175,7 @@ const styles = StyleSheet.create({
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     marginBottom: 12,
   },
   sectionTitle: {
@@ -195,40 +193,88 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
   },
+  exercisePickerTitle: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
+    writingDirection: 'rtl',
+    marginBottom: 10,
+  },
+  exercisePickerWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 14,
+  },
+  exerciseChip: {
+    minWidth: '48%',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  exerciseChipActive: {
+    borderColor: '#00d4ff',
+    backgroundColor: 'rgba(0, 212, 255, 0.16)',
+  },
+  exerciseChipPercent: {
+    color: '#d4e2ea',
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
+    writingDirection: 'rtl',
+  },
+  exerciseChipPercentActive: {
+    color: '#d6f7ff',
+  },
+  exerciseChipText: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
+    writingDirection: 'rtl',
+    marginTop: 4,
+  },
+  exerciseChipTextActive: {
+    color: '#ffffff',
+  },
   cardMeta: {
     color: 'rgba(255,255,255,0.58)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     marginBottom: 12,
   },
   stateText: {
     color: 'rgba(255,255,255,0.66)',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   errorText: {
     color: '#ff9a8b',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     marginBottom: 6,
     fontSize: 14,
   },
   childPickerLoadingRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     gap: 10,
   },
   childPickerStateText: {
     color: 'rgba(255,255,255,0.72)',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   childChipsWrap: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 9,
   },
@@ -248,7 +294,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.86)',
     fontSize: 13,
     fontWeight: '600',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   childChipTextActive: {
@@ -260,7 +306,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   progressLabelRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 5,
@@ -268,22 +314,24 @@ const styles = StyleSheet.create({
   },
   progressLabel: {
     color: '#e8f7ff',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     fontSize: 14,
     writingDirection: 'rtl',
     flexShrink: 1,
   },
   progressPercent: {
     color: 'rgba(255,255,255,0.7)',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     fontSize: 13,
     minWidth: 38,
+    writingDirection: 'rtl',
   },
   progressTrack: {
     height: 11,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.12)',
     overflow: 'hidden',
+    flexDirection: 'row-reverse',
   },
   progressFill: {
     height: '100%',
@@ -304,7 +352,7 @@ const styles = StyleSheet.create({
     color: '#8aeaff',
     fontSize: 12,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     marginBottom: 4,
   },
@@ -312,7 +360,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.86)',
     fontSize: 14,
     lineHeight: 21,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
 
@@ -342,7 +390,7 @@ const styles = StyleSheet.create({
   summaryNoticeText: {
     color: 'rgba(255,255,255,0.72)',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     marginTop: 2,
     lineHeight: 20,
@@ -350,7 +398,7 @@ const styles = StyleSheet.create({
   summaryErrorText: {
     color: '#ffb19f',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     marginTop: 2,
     lineHeight: 20,
@@ -369,7 +417,7 @@ const styles = StyleSheet.create({
     color: '#8aeaff',
     fontSize: 12,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     marginBottom: 6,
   },
@@ -377,14 +425,14 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.88)',
     fontSize: 14,
     lineHeight: 22,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   summaryLinesWrap: {
     marginTop: 2,
   },
   summaryLineRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
     marginBottom: 8,
@@ -406,13 +454,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 14,
     textAlign: 'center',
+    writingDirection: 'rtl',
   },
   summaryLineText: {
     flex: 1,
     color: 'rgba(255,255,255,0.9)',
     fontSize: 14,
     lineHeight: 23,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   summaryLineLast: {
@@ -462,6 +511,8 @@ const styles = StyleSheet.create({
   footerCopy: {
     color: 'rgba(255,255,255,0.35)',
     fontSize: 11,
+    writingDirection: 'rtl',
+    textAlign: 'center',
   },
 });
 

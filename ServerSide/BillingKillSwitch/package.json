@@ -1,0 +1,9 @@
+{
+  "name": "stop-billing",
+  "version": "1.0.0",
+  "description": "Cloud Function to programmatically detach billing account on budget alerts",
+  "main": "index.js",
+  "dependencies": {
+    "google-auth-library": "^9.11.0"
+  }
+}

@@ -1,20 +1,21 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform, StatusBar, I18nManager } from 'react-native';
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#001529',
+    paddingTop: Platform.OS === 'ios' ? 44 : (Platform.OS === 'android' ? StatusBar.currentHeight : 0),
   },
   scrollContent: {
     paddingHorizontal: 12,
-    paddingTop: 24,
-    paddingBottom: 28,
+    paddingTop: 8,
+    paddingBottom: 48,
   },
   errorText: {
     marginTop: 8,
     color: '#ff9b9b',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
 
@@ -24,7 +25,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 14,
-    flexDirection: 'row',
+    flexDirection: I18nManager.isRTL ? 'row-reverse' : 'row',
     alignItems: 'center',
     gap: 10,
   },
@@ -36,7 +37,7 @@ const styles = StyleSheet.create({
     color: '#ffd7d7',
     fontSize: 14,
     flex: 1,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
 
@@ -49,7 +50,6 @@ const styles = StyleSheet.create({
     color: '#bdefff',
     fontSize: 16,
     fontWeight: '700',
-    writingDirection: 'rtl',
     textAlign: 'center',
   },
 
@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   summaryHeaderRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: I18nManager.isRTL ? 'row-reverse' : 'row',
     alignItems: 'center',
     marginBottom: 10,
     gap: 8,
@@ -77,15 +77,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#fff2d2',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
-    textAlign: 'right',
   },
   summaryText: {
     fontSize: 14,
     color: 'rgba(255,255,255,0.84)',
     lineHeight: 22,
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
-    textAlign: 'right',
   },
 
   groupCard: {
@@ -97,7 +97,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   groupHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: I18nManager.isRTL ? 'row-reverse' : 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
@@ -106,8 +106,8 @@ const styles = StyleSheet.create({
     fontSize: 19,
     fontWeight: '800',
     color: '#ecfaff',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
-    textAlign: 'right',
   },
   groupAccent: {
     width: 4,
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 9,
     marginBottom: 10,
-    flexDirection: 'row-reverse',
+    flexDirection: I18nManager.isRTL ? 'row' : 'row-reverse',
     alignItems: 'center',
     gap: 8,
   },
@@ -141,23 +141,23 @@ const styles = StyleSheet.create({
   metricLabel: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.74)',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
-    textAlign: 'right',
   },
   metricValue: {
     fontSize: 14,
     fontWeight: '800',
     color: '#d9f8ff',
     marginTop: 1,
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
-    textAlign: 'right',
   },
   metricsEmptyText: {
     color: 'rgba(255,255,255,0.62)',
     fontSize: 13,
     fontStyle: 'italic',
     marginBottom: 10,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
 
@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   aiNotesHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: I18nManager.isRTL ? 'row-reverse' : 'row',
     alignItems: 'center',
     marginBottom: 6,
     gap: 6,
@@ -177,15 +177,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#ffe7a8',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
-    textAlign: 'right',
   },
   aiNotesText: {
     fontSize: 14,
     color: 'rgba(255,255,255,0.82)',
     lineHeight: 22,
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
-    textAlign: 'right',
   },
 
   refreshButton: {
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0,212,255,0.45)',
     backgroundColor: 'rgba(0,212,255,0.2)',
-    flexDirection: 'row-reverse',
+    flexDirection: I18nManager.isRTL ? 'row-reverse' : 'row',
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 14,
@@ -205,14 +205,14 @@ const styles = StyleSheet.create({
     color: '#dff8ff',
     fontSize: 16,
     fontWeight: '700',
-    writingDirection: 'rtl',
-    textAlign: 'right',
   },
   emptyStateText: {
     marginTop: 8,
     color: 'rgba(255,255,255,0.66)',
     fontSize: 14,
-    textAlign: 'right',
+    alignSelf: 'stretch',
+    width: '100%',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
 });

@@ -1,4 +1,4 @@
-import { StyleSheet, Dimensions, Platform, StatusBar } from 'react-native';
+import { StyleSheet, Dimensions, Platform, StatusBar, I18nManager } from 'react-native';
 import { colors, shadows } from '../theme/tokens';
 
 const { width } = Dimensions.get('window');
@@ -9,21 +9,20 @@ function clamp(min, val, max) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgDeep },
-  scrollContent: { paddingTop: 110, paddingBottom: 60 },
+  scrollContent: { paddingTop: 70, paddingBottom: 60 },
 
   /* Waves & Bubbles */
   waveContainer: {
-    position: 'absolute', bottom: 0, left: 0,
+    position: 'absolute', bottom: 0, left: (width - 2400) / 2,
     width: 2400, height: 150, zIndex: 0,
   },
-  bubbleWrapper: { position: 'absolute', zIndex: 1 },
 
-  /* ── Navbar ── */
+  /* ג”€ג”€ Navbar ג”€ג”€ */
   navbar: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    paddingTop: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight || 20) + 15,
-    paddingBottom: 14,
-    paddingHorizontal: 18,
+    paddingTop: Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 20) + 6,
+    paddingBottom: 8,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -32,40 +31,40 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   navIconBtn: {
-    width: 40, height: 40,
+    width: 36, height: 36,
     justifyContent: 'center', alignItems: 'center',
   },
   logoutBtn: {
-    minWidth: 84,
-    height: 36,
-    borderRadius: 12,
+    minWidth: 76,
+    height: 32,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.28)',
     backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
   },
   logoutBtnText: {
     color: '#f3fbff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
     writingDirection: 'rtl',
   },
-  navCenter: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  navCenter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   navLogo: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 28, height: 28, borderRadius: 14,
     justifyContent: 'center', alignItems: 'center',
   },
-  navLogoEmoji: { fontSize: 16 },
+  navLogoEmoji: { fontSize: 14 },
   navTitle: {
-    color: '#fff', fontSize: 18, fontWeight: '700',
+    color: '#fff', fontSize: 16, fontWeight: '700',
     writingDirection: 'rtl',
   },
   navBellWrap: {
-    minWidth: 88,
-    height: 40,
-    paddingHorizontal: 6,
+    minWidth: 80,
+    height: 36,
+    paddingHorizontal: 4,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -90,7 +89,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'visible',
   },
-  navBell: { fontSize: 20 },
+  navBell: { fontSize: 18 },
   navBadge: {
     position: 'absolute',
     top: -7,
@@ -115,7 +114,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  /* ── Hero ── */
+  /* ג”€ג”€ Hero ג”€ג”€ */
   hero: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -154,7 +153,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
 
-  /* ── Section shared ── */
+  /* ג”€ג”€ Section shared ג”€ג”€ */
   section: {
     marginTop: 36,
     paddingHorizontal: '5%',
@@ -163,7 +162,7 @@ const styles = StyleSheet.create({
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     marginBottom: 18,
     gap: 8,
   },
@@ -173,7 +172,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   selectorWrap: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
   },
@@ -204,79 +203,107 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
 
-  /* ── Activity cards ── */
+  /* ג”€ג”€ Activity cards ג”€ג”€ */
   activityCard: {
     borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
   activityAccent: {
     position: 'absolute',
     right: 0, top: 12, bottom: 12,
     width: 3, borderRadius: 3,
   },
-  activityBody: {
+  activityHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  activityHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    paddingRight: 18,
+    gap: 10,
   },
-  activityIconWrap: {
-    marginRight: 14,
+  activityIconBgMini: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
     alignItems: 'center',
-    width: 106,
-  },
-  activityIconBg: {
-    width: 48, height: 48, borderRadius: 14,
-    justifyContent: 'center', alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: 'rgba(255,255,255,0.12)',
   },
-  activityIcon: { fontSize: 22 },
-  lessonReportButton: {
-    marginTop: 9,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0,212,255,0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(0,212,255,0.45)',
-    width: '100%',
+  activityIconMini: {
+    fontSize: 16,
   },
-  lessonReportButtonText: {
-    color: '#d7f6ff',
-    fontSize: 11,
-    fontWeight: '700',
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  activityTextWrap: { flex: 1 },
   activityTitle: {
-    color: '#fff', fontSize: 16, fontWeight: '700',
-    textAlign: 'right', writingDirection: 'rtl',
-    marginBottom: 3,
-  },
-  activityDesc: {
-    color: 'rgba(255,255,255,0.55)', fontSize: 13,
-    textAlign: 'right', writingDirection: 'rtl',
-    lineHeight: 19,
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    writingDirection: 'rtl',
   },
   activityDateBadge: {
     backgroundColor: 'rgba(0,212,255,0.12)',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginLeft: 10,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderWidth: 1,
     borderColor: 'rgba(0,212,255,0.2)',
   },
   activityDate: {
-    color: '#00d4ff', fontSize: 12, fontWeight: '700',
+    color: '#00d4ff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  activityContent: {
+    paddingStart: 42, // Aligns with the text start after the mini icon
+    marginBottom: 12,
+  },
+  activityDesc: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 13,
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
+    writingDirection: 'rtl',
+    lineHeight: 18,
+  },
+  activityDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginHorizontal: 4,
+    marginBottom: 12,
+  },
+  activityFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end', // Aligns the button to the left side in RTL (end)
+  },
+  activityReportBtn: {
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(0,212,255,0.4)',
+  },
+  activityReportBtnGradient: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityReportBtnText: {
+    color: '#d7f6ff',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    writingDirection: 'rtl',
   },
 
-  /* ── Upcoming lessons ── */
+  /* ג”€ג”€ Upcoming lessons ג”€ג”€ */
   lessonCard: {
     marginBottom: 12,
     borderRadius: 18,
@@ -330,14 +357,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     marginBottom: 4,
   },
   lessonSecondaryText: {
     color: 'rgba(255,255,255,0.72)',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     marginBottom: 2,
   },
@@ -345,7 +372,7 @@ const styles = StyleSheet.create({
     color: '#9eefff',
     fontSize: 12,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     marginTop: 5,
   },
@@ -353,12 +380,20 @@ const styles = StyleSheet.create({
     marginTop: 6,
     color: 'rgba(255,255,255,0.62)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     lineHeight: 18,
   },
+  lessonMetricText: {
+    marginTop: 5,
+    color: '#ffd670',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
+    writingDirection: 'rtl',
+  },
 
-  /* ── Instructor card ── */
+  /* ג”€ג”€ Instructor card ג”€ג”€ */
   instructorsListWrap: {
     gap: 12,
   },
@@ -371,25 +406,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 18,
+    gap: 14,
   },
   instructorInfo: {
     flex: 1,
-    marginLeft: 14,
   },
   instructorName: {
     color: '#fff', fontSize: 17, fontWeight: '700',
-    textAlign: 'right', writingDirection: 'rtl',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right', writingDirection: 'rtl',
   },
   instructorRole: {
     color: 'rgba(255,255,255,0.5)', fontSize: 12,
-    textAlign: 'right', writingDirection: 'rtl',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right', writingDirection: 'rtl',
     marginTop: 3,
   },
   instructorChildrenLabel: {
     color: 'rgba(255,255,255,0.78)',
     fontSize: 12,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     marginTop: 6,
   },
@@ -435,11 +470,11 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.75)',
     fontSize: 12,
     lineHeight: 19,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
 
-  /* ── Action buttons ── */
+  /* ג”€ג”€ Action buttons ג”€ג”€ */
   actionsSection: {
     marginTop: 34,
     paddingHorizontal: '5%',
@@ -457,14 +492,17 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 22,
     borderRadius: 18,
+    gap: 14,
   },
-  actionBtnIcon: { fontSize: 22, marginRight: 14 },
+  actionBtnIcon: {
+    fontSize: 22,
+  },
   actionBtnLabel: {
     flex: 1,
     color: '#001529',
     fontSize: 16,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   actionBtnArrow: {
@@ -473,7 +511,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  /* ── Footer ── */
+  /* ג”€ג”€ Footer ג”€ג”€ */
   footer: {
     marginTop: 60,
     paddingTop: 30,
@@ -499,7 +537,7 @@ const styles = StyleSheet.create({
   },
   footerCopy: { color: 'rgba(255,255,255,0.3)', fontSize: 11 },
 
-  /* ── Lesson report modal ── */
+  /* ג”€ג”€ Lesson report modal ג”€ג”€ */
   reportModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 21, 41, 0.55)',
@@ -553,7 +591,7 @@ const styles = StyleSheet.create({
     marginBottom: 9,
   },
   reportMetricHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
@@ -569,13 +607,14 @@ const styles = StyleSheet.create({
     color: '#a9edff',
     fontSize: 12,
     fontWeight: '700',
-    marginLeft: 8,
+    marginRight: 8,
   },
   reportMetricTrack: {
     height: 8,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.14)',
     overflow: 'hidden',
+    flexDirection: 'row-reverse',
   },
   reportMetricFill: {
     height: '100%',
@@ -614,7 +653,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
 
-  /* ── ACM guide modal ── */
+  /* ג”€ג”€ ACM guide modal ג”€ג”€ */
   acmGuideModalCard: {
     width: '100%',
     maxHeight: '90%',
@@ -703,6 +742,38 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
     writingDirection: 'rtl',
+  },
+  childFilterContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingHorizontal: 16,
+  },
+  childFilterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  childFilterChipActive: {
+    backgroundColor: 'rgba(0, 212, 255, 0.25)',
+    borderColor: 'rgba(0, 212, 255, 0.6)',
+  },
+  childFilterText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+  childFilterTextActive: {
+    color: '#d9f8ff',
+    fontWeight: '800',
   },
 });
 

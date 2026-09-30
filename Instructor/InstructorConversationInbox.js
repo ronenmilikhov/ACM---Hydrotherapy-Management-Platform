@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Platform,
   SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
+  I18nManager,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
@@ -79,6 +82,13 @@ export default function InstructorConversationInbox({ navigation, route }) {
   const [threads, setThreads] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorText, setErrorText] = useState('');
+  const [searchText, setSearchText] = useState('');
+
+  const filteredThreads = threads.filter((thread) => {
+    const parentName = String(thread?.parentFullName || '').trim().toLowerCase();
+    const query = searchText.trim().toLowerCase();
+    return parentName.includes(query);
+  });
 
   const loadInbox = useCallback(async () => {
     if (!instructorId) {
@@ -124,7 +134,7 @@ export default function InstructorConversationInbox({ navigation, route }) {
       <RoleHeader
         title="תיבת צ׳אטים"
         onMenuPress={() => navigation.goBack()}
-        leftIcon="‹"
+        leftIcon="›"
         rightIcon="↻"
         rightLabel="רענון"
         onRightPress={loadInbox}
@@ -137,6 +147,15 @@ export default function InstructorConversationInbox({ navigation, route }) {
           <Text style={styles.summaryText}>כל שיחה נפתחת ישירות לצ׳אט המלא עם ההורה עבור הילד המתאים.</Text>
           <Text style={styles.summaryCount}>סה״כ שיחות: {threads.length}</Text>
         </View>
+
+        <TextInput
+          value={searchText}
+          onChangeText={setSearchText}
+          style={styles.searchInput}
+          placeholder="חיפוש שיחה לפי שם ההורה..."
+          placeholderTextColor="rgba(220, 242, 255, 0.5)"
+          textAlign="right"
+        />
 
         {isLoading ? (
           <View style={styles.stateCard}>
@@ -156,7 +175,13 @@ export default function InstructorConversationInbox({ navigation, route }) {
           </View>
         ) : null}
 
-        {threads.map((thread) => (
+        {!isLoading && !errorText && threads.length > 0 && filteredThreads.length === 0 ? (
+          <View style={styles.stateCard}>
+            <Text style={styles.stateText}>לא נמצאו שיחות התואמות לחיפוש.</Text>
+          </View>
+        ) : null}
+
+        {filteredThreads.map((thread) => (
           <TouchableOpacity
             key={String(thread.conversationId)}
             activeOpacity={0.82}
@@ -205,8 +230,8 @@ export default function InstructorConversationInbox({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#001529' },
-  content: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 24, gap: 12 },
+  safeArea: { flex: 1, backgroundColor: '#001529', paddingTop: Platform.OS === 'ios' ? 44 : (Platform.OS === 'android' ? StatusBar.currentHeight : 0) },
+  content: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 48, gap: 12 },
   summaryPanel: {
     backgroundColor: 'rgba(8, 60, 97, 0.66)',
     borderRadius: 16,
@@ -219,21 +244,34 @@ const styles = StyleSheet.create({
     color: '#eaf9ff',
     fontSize: 17,
     fontWeight: '800',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   summaryText: {
     color: 'rgba(220, 242, 255, 0.85)',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   summaryCount: {
     color: '#93e1ff',
     fontSize: 13,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
+  },
+  searchInput: {
+    backgroundColor: 'rgba(8, 60, 97, 0.45)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(130, 219, 255, 0.28)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    color: '#eaf9ff',
+    fontSize: 14,
+    textAlign: 'right',
+    marginTop: 4,
+    marginBottom: 4,
   },
   stateCard: {
     backgroundColor: 'rgba(6, 58, 95, 0.62)',
@@ -253,13 +291,13 @@ const styles = StyleSheet.create({
   },
   stateText: {
     color: 'rgba(235,248,255,0.9)',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     fontSize: 14,
   },
   errorText: {
     color: '#ffd5de',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     fontSize: 14,
   },
@@ -278,7 +316,7 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   threadHeaderRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: I18nManager.isRTL ? 'row' : 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
@@ -301,7 +339,7 @@ const styles = StyleSheet.create({
     color: '#f3fbff',
     fontSize: 16,
     fontWeight: '800',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
     flex: 1,
   },
@@ -310,14 +348,14 @@ const styles = StyleSheet.create({
     color: 'rgba(233,247,255,0.94)',
     fontSize: 13,
     lineHeight: 20,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   threadMeta: {
     marginTop: 8,
     color: 'rgba(207,237,255,0.9)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   backButtonShell: { marginTop: 8 },

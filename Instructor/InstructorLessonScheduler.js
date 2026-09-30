@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
+  I18nManager,
   Modal,
   Platform,
   SafeAreaView,
@@ -27,17 +29,107 @@ const defaultFormState = {
   capacity: '1',
   minRegistrations: '1',
   generalNote: '',
+  targetMetric: '',
+};
+
+const METRIC_OPTIONS = [
+  { value: 'ציפה על הבטן', label: 'ציפה על הבטן' },
+  { value: 'בעיטות בטן', label: 'בעיטות בטן' },
+  { value: 'קפיצה חץ', label: 'קפיצה חץ' },
+  { value: 'חישוק', label: 'חישוק' },
+  { value: 'ציפה על הגב', label: 'ציפה על הגב' },
+  { value: 'בעיטות גב', label: 'בעיטות גב' },
+  { value: 'קפיצה עמוק', label: 'קפיצה עמוק' },
+  { value: 'ביטחון במים', label: 'ביטחון במים' },
+];
+
+const getIsraelParts = (dateValue) => {
+  if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
+    return null;
+  }
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Jerusalem',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(dateValue);
+    const getVal = (type) => parts.find(p => p.type === type)?.value;
+    
+    const year = getVal('year');
+    const month = getVal('month');
+    const day = getVal('day');
+    const hour = getVal('hour');
+    const minute = getVal('minute');
+    
+    if (year && month && day && hour !== undefined && minute !== undefined) {
+      return {
+        year: Number(year),
+        month: Number(month),
+        day: Number(day),
+        hour: Number(hour) % 24,
+        minute: Number(minute),
+      };
+    }
+  } catch (e) {
+    console.warn('Failed to format with Asia/Jerusalem timezone, falling back to local time:', e);
+  }
+  
+  return {
+    year: dateValue.getFullYear(),
+    month: dateValue.getMonth() + 1,
+    day: dateValue.getDate(),
+    hour: dateValue.getHours(),
+    minute: dateValue.getMinutes(),
+  };
+};
+
+const createDateFromIsraelParts = (year, month, day, hour = 0, minute = 0) => {
+  const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  const parts = getIsraelParts(utcDate);
+  if (!parts) {
+    return utcDate;
+  }
+  const utcMinutes = Date.UTC(year, month - 1, day, hour, minute) / 60000;
+  const localMidnightMinutes = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute) / 60000;
+  const offsetMinutes = localMidnightMinutes - utcMinutes;
+  return new Date((utcMinutes - offsetMinutes) * 60000);
 };
 
 const toIsoDateString = (dateValue) => {
-  if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
+  const parts = getIsraelParts(dateValue);
+  if (!parts) {
     return '';
   }
-
-  const year = dateValue.getFullYear();
-  const month = String(dateValue.getMonth() + 1).padStart(2, '0');
-  const day = String(dateValue.getDate()).padStart(2, '0');
+  const year = parts.year;
+  const month = String(parts.month).padStart(2, '0');
+  const day = String(parts.day).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+const toTimeIsoString = (dateValue) => {
+  const parts = getIsraelParts(dateValue);
+  if (!parts) {
+    return '';
+  }
+  const hours = String(parts.hour).padStart(2, '0');
+  const minutes = String(parts.minute).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
+const parseTimeToDate = (timeString) => {
+  const normalized = String(timeString || '').trim();
+  const now = new Date();
+  const parts = getIsraelParts(now);
+  if (!/^\d{2}:\d{2}$/.test(normalized)) {
+    return createDateFromIsraelParts(parts.year, parts.month, parts.day, parts.hour, parts.minute);
+  }
+  const [hoursText, minutesText] = normalized.split(':');
+  return createDateFromIsraelParts(parts.year, parts.month, parts.day, Number(hoursText), Number(minutesText));
 };
 
 const parseIsoDate = (rawValue) => {
@@ -45,13 +137,8 @@ const parseIsoDate = (rawValue) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
     return null;
   }
-
-  const parsedDate = new Date(`${normalized}T00:00:00`);
-  if (Number.isNaN(parsedDate.getTime())) {
-    return null;
-  }
-
-  return parsedDate;
+  const [yearText, monthText, dayText] = normalized.split('-');
+  return createDateFromIsraelParts(Number(yearText), Number(monthText), Number(dayText), 0, 0);
 };
 
 const formatDisplayDate = (rawDate) => {
@@ -59,12 +146,14 @@ const formatDisplayDate = (rawDate) => {
   if (!parsedDate) {
     return '';
   }
-
-  return parsedDate.toLocaleDateString('he-IL', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  const parts = getIsraelParts(parsedDate);
+  if (!parts) {
+    return '';
+  }
+  const day = String(parts.day).padStart(2, '0');
+  const month = String(parts.month).padStart(2, '0');
+  const year = parts.year;
+  return `${day}/${month}/${year}`;
 };
 
 const parseHourMinuteToMinutes = (rawValue) => {
@@ -103,55 +192,29 @@ const buildComparableMinuteStamp = (isoDate, minutesFromMidnight) => {
     return null;
   }
 
-  return Math.floor(Date.UTC(year, month - 1, day, 0, 0, 0, 0) / 60000) + minutesFromMidnight;
+  const dateMidnight = createDateFromIsraelParts(year, month, day, 0, 0);
+  return Math.floor(dateMidnight.getTime() / 60000) + minutesFromMidnight;
 };
 
 const getIsraelNowMinuteStamp = () => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Jerusalem',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(new Date());
-
-  const getPartValue = (type) => parts.find((part) => part.type === type)?.value || '';
-  const year = Number(getPartValue('year'));
-  const month = Number(getPartValue('month'));
-  const day = Number(getPartValue('day'));
-  const hour = Number(getPartValue('hour'));
-  const minute = Number(getPartValue('minute'));
-
-  if (![year, month, day, hour, minute].every(Number.isFinite)) {
-    return null;
-  }
-
-  return Math.floor(Date.UTC(year, month - 1, day, 0, 0, 0, 0) / 60000) + (hour * 60) + minute;
+  const now = new Date();
+  const parts = getIsraelParts(now);
+  const startOfDay = createDateFromIsraelParts(parts.year, parts.month, parts.day, 0, 0);
+  return Math.floor(startOfDay.getTime() / 60000) + (parts.hour * 60) + parts.minute;
 };
 
 const getIsraelTodayIsoDate = () => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Jerusalem',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-
-  const getPartValue = (type) => parts.find((part) => part.type === type)?.value || '';
-  const year = getPartValue('year');
-  const month = getPartValue('month');
-  const day = getPartValue('day');
-
-  if (!year || !month || !day) {
-    return '';
-  }
-
+  const now = new Date();
+  const parts = getIsraelParts(now);
+  const year = parts.year;
+  const month = String(parts.month).padStart(2, '0');
+  const day = String(parts.day).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
 
 const recipientKey = (parentId, childId) => `${parentId}-${childId}`;
+
+const NUMBER_OPTIONS = Array.from({ length: 19 }, (_, i) => i + 2);
 
 export default function InstructorLessonScheduler({ navigation, route }) {
   const authUser = route?.params?.authUser;
@@ -164,8 +227,19 @@ export default function InstructorLessonScheduler({ navigation, route }) {
   const [draftRecipientKey, setDraftRecipientKey] = useState('');
   const [instructorGroups, setInstructorGroups] = useState([]);
   const [showGroupDropdown, setShowGroupDropdown] = useState(false);
+  const [showMetricDropdown, setShowMetricDropdown] = useState(false);
   const [showDateModal, setShowDateModal] = useState(false);
   const [draftMeetingDate, setDraftMeetingDate] = useState(new Date());
+  const draftMeetingDateRef = useRef(new Date());
+  const [showStartTimeModal, setShowStartTimeModal] = useState(false);
+  const [draftStartTime, setDraftStartTime] = useState(new Date());
+  const draftStartTimeRef = useRef(new Date());
+  const [showEndTimeModal, setShowEndTimeModal] = useState(false);
+  const [draftEndTime, setDraftEndTime] = useState(new Date());
+  const draftEndTimeRef = useRef(new Date());
+  const [groupChildrenKeys, setGroupChildrenKeys] = useState(new Set());
+  const [showCapacityModal, setShowCapacityModal] = useState(false);
+  const [showMinRegistrationsModal, setShowMinRegistrationsModal] = useState(false);
 
   const [isLoadingPool, setIsLoadingPool] = useState(false);
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
@@ -175,8 +249,25 @@ export default function InstructorLessonScheduler({ navigation, route }) {
 
   const selectedRecipientItems = useMemo(() => {
     const chosenKeys = new Set(Object.keys(selectedRecipients).filter((key) => selectedRecipients[key]));
-    return recipientPool.filter((item) => chosenKeys.has(recipientKey(item.parentId, item.childId)));
-  }, [recipientPool, selectedRecipients]);
+    let pool = recipientPool;
+    if (form.mode === 'group') {
+      if (!form.groupId) {
+        return [];
+      }
+      pool = pool.filter((item) => groupChildrenKeys.has(recipientKey(item.parentId, item.childId)));
+    }
+    return pool.filter((item) => chosenKeys.has(recipientKey(item.parentId, item.childId)));
+  }, [recipientPool, selectedRecipients, form.mode, form.groupId, groupChildrenKeys]);
+
+  const visibleRecipientOptions = useMemo(() => {
+    if (form.mode === 'group') {
+      if (!form.groupId) {
+        return [];
+      }
+      return recipientPool.filter((item) => groupChildrenKeys.has(recipientKey(item.parentId, item.childId)));
+    }
+    return recipientPool;
+  }, [recipientPool, form.mode, form.groupId, groupChildrenKeys]);
 
   const draftRecipientOption = useMemo(() => {
     if (!draftRecipientKey) {
@@ -267,6 +358,64 @@ export default function InstructorLessonScheduler({ navigation, route }) {
     }, [refreshAll]),
   );
 
+  useEffect(() => {
+    if (form.mode !== 'group') {
+      setGroupChildrenKeys(new Set());
+      return;
+    }
+
+    if (!form.groupId) {
+      setGroupChildrenKeys(new Set());
+      setSelectedRecipients({});
+      setDraftRecipientKey('');
+      return;
+    }
+
+    const fetchGroupChildren = async () => {
+      try {
+        setErrorText('');
+        const response = await fetch(`${API_BASE_URL}/instructor/${instructorId}/groups/${form.groupId}/children`);
+        const payload = await response.json().catch(() => null);
+        if (response.ok && payload && Array.isArray(payload.children)) {
+          const groupRecipients = payload.children
+            .filter(c => c.parentId && c.childId)
+            .map(c => ({
+              parentId: c.parentId,
+              childId: c.childId,
+              parentFullName: c.parentFullName || '',
+              parentEmail: c.parentEmail || '',
+              childFullName: c.fullName || `${c.firstName} ${c.lastName}`.trim()
+            }));
+
+          setRecipientPool(prevPool => {
+            const nextPool = [...prevPool];
+            groupRecipients.forEach(item => {
+              const exists = nextPool.some(p => p.parentId === item.parentId && p.childId === item.childId);
+              if (!exists) {
+                nextPool.push(item);
+              }
+            });
+            return nextPool;
+          });
+
+          const keysSet = new Set();
+          const nextSelected = {};
+          groupRecipients.forEach(item => {
+            const key = recipientKey(item.parentId, item.childId);
+            keysSet.add(key);
+            nextSelected[key] = true;
+          });
+          setGroupChildrenKeys(keysSet);
+          setSelectedRecipients(nextSelected);
+        }
+      } catch (err) {
+        console.error('Failed to load group children:', err);
+      }
+    };
+
+    fetchGroupChildren();
+  }, [form.groupId, form.mode, instructorId]);
+
   const onModeChange = (mode) => {
     if (mode === form.mode) {
       return;
@@ -275,11 +424,12 @@ export default function InstructorLessonScheduler({ navigation, route }) {
     setForm((prev) => ({
       ...prev,
       mode,
-      capacity: mode === 'private' ? '1' : (Number(prev.capacity) > 1 ? prev.capacity : '20'),
-      minRegistrations: mode === 'private' ? '1' : (Number(prev.minRegistrations) > 1 ? prev.minRegistrations : '5'),
+      capacity: mode === 'private' ? '1' : (Number(prev.capacity) >= 2 ? prev.capacity : '20'),
+      minRegistrations: mode === 'private' ? '1' : (Number(prev.minRegistrations) >= 2 ? prev.minRegistrations : '2'),
       groupId: mode === 'private' ? '' : prev.groupId,
     }));
     setShowGroupDropdown(false);
+    setShowMetricDropdown(false);
 
     if (mode === 'private') {
       const firstSelectedKey = Object.keys(selectedRecipients).find((key) => selectedRecipients[key]);
@@ -341,7 +491,8 @@ export default function InstructorLessonScheduler({ navigation, route }) {
     const fallbackTodayDate = parseIsoDate(israelTodayIsoDate) || new Date();
     const requestedDate = parseIsoDate(form.meetingDate) || fallbackTodayDate;
     const today = new Date();
-    const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayParts = getIsraelParts(today);
+    const todayAtMidnight = createDateFromIsraelParts(todayParts.year, todayParts.month, todayParts.day, 0, 0);
     const minimumDate = parseIsoDate(israelTodayIsoDate) || todayAtMidnight;
     const existingDate = requestedDate < minimumDate ? minimumDate : requestedDate;
 
@@ -361,13 +512,116 @@ export default function InstructorLessonScheduler({ navigation, route }) {
       return;
     }
 
+    draftMeetingDateRef.current = existingDate;
     setDraftMeetingDate(existingDate);
     setShowDateModal(true);
   };
 
   const saveMeetingDateFromModal = () => {
-    setForm((prev) => ({ ...prev, meetingDate: toIsoDateString(draftMeetingDate) }));
+    setForm((prev) => ({ ...prev, meetingDate: toIsoDateString(draftMeetingDateRef.current) }));
     setShowDateModal(false);
+  };
+
+  const getIsraelNowParts = () => {
+    const now = new Date();
+    const parts = getIsraelParts(now);
+    const year = parts.year;
+    const month = String(parts.month).padStart(2, '0');
+    const day = String(parts.day).padStart(2, '0');
+    return {
+      date: `${year}-${month}-${day}`,
+      hour: parts.hour,
+      minute: parts.minute,
+    };
+  };
+
+  const openStartTimePicker = () => {
+    let pickerValue;
+    if (form.startTime && /^\d{2}:\d{2}$/.test(form.startTime)) {
+      const [h, m] = form.startTime.split(':').map(Number);
+      const d = new Date();
+      d.setHours(h, m, 0, 0);
+      pickerValue = d;
+    } else {
+      pickerValue = new Date();
+    }
+
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: pickerValue,
+        mode: 'time',
+        display: 'spinner',
+        is24Hour: true,
+        onChange: (event, selectedDate) => {
+          if (event.type === 'set' && selectedDate) {
+            const h = String(selectedDate.getHours()).padStart(2, '0');
+            const m = String(selectedDate.getMinutes()).padStart(2, '0');
+            setForm((prev) => ({ ...prev, startTime: `${h}:${m}` }));
+          }
+        },
+      });
+      return;
+    }
+
+    draftStartTimeRef.current = pickerValue;
+    setDraftStartTime(pickerValue);
+    setShowStartTimeModal(true);
+  };
+
+  const openEndTimePicker = () => {
+    let pickerValue;
+    if (form.endTime && /^\d{2}:\d{2}$/.test(form.endTime)) {
+      const [h, m] = form.endTime.split(':').map(Number);
+      const d = new Date();
+      d.setHours(h, m, 0, 0);
+      pickerValue = d;
+    } else if (form.startTime && /^\d{2}:\d{2}$/.test(form.startTime)) {
+      const [h, m] = form.startTime.split(':').map(Number);
+      let endMinutes = (h * 60 + m) + 60;
+      if (endMinutes >= 24 * 60) endMinutes = 24 * 60 - 5;
+      const d = new Date();
+      d.setHours(Math.floor(endMinutes / 60), endMinutes % 60, 0, 0);
+      pickerValue = d;
+    } else {
+      pickerValue = new Date();
+    }
+
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: pickerValue,
+        mode: 'time',
+        display: 'spinner',
+        is24Hour: true,
+        onChange: (event, selectedDate) => {
+          if (event.type === 'set' && selectedDate) {
+            const h = String(selectedDate.getHours()).padStart(2, '0');
+            const m = String(selectedDate.getMinutes()).padStart(2, '0');
+            setForm((prev) => ({ ...prev, endTime: `${h}:${m}` }));
+          }
+        },
+      });
+      return;
+    }
+
+    draftEndTimeRef.current = pickerValue;
+    setDraftEndTime(pickerValue);
+    setShowEndTimeModal(true);
+  };
+
+  const saveStartTimeFromModal = () => {
+    const finalDate = draftStartTimeRef.current;
+    const h = String(finalDate.getHours()).padStart(2, '0');
+    const m = String(finalDate.getMinutes()).padStart(2, '0');
+    setForm((prev) => ({ ...prev, startTime: `${h}:${m}` }));
+    setShowStartTimeModal(false);
+  };
+
+  const saveEndTimeFromModal = () => {
+    const finalDate = draftEndTimeRef.current;
+    const h = String(finalDate.getHours()).padStart(2, '0');
+    const m = String(finalDate.getMinutes()).padStart(2, '0');
+    setForm((prev) => ({ ...prev, endTime: `${h}:${m}` }));
+    setShowEndTimeModal(false);
   };
 
   const createInvitation = async () => {
@@ -384,6 +638,11 @@ export default function InstructorLessonScheduler({ navigation, route }) {
 
     if (!form.meetingDate || !form.startTime || !form.endTime) {
       setErrorText('יש למלא תאריך, שעת התחלה ושעת סיום.');
+      return;
+    }
+
+    if (!String(form.targetMetric || '').trim()) {
+      setErrorText('יש לבחור מדד מטרה לשיעור.');
       return;
     }
 
@@ -448,19 +707,21 @@ export default function InstructorLessonScheduler({ navigation, route }) {
     const capacity = form.mode === 'private' ? 1 : Number(form.capacity || 0);
     const minRegistrations = form.mode === 'private' ? 1 : Number(form.minRegistrations || 0);
 
-    if (form.mode === 'group' && (!Number.isInteger(capacity) || capacity <= 0)) {
-      setErrorText('קיבולת חייבת להיות מספר חיובי.');
-      return;
-    }
+    if (form.mode === 'group') {
+      if (!form.capacity.trim() || !Number.isInteger(capacity) || capacity < 2 || capacity > 20) {
+        setErrorText('מקסימום ילדים בשיעור קבוצתי חייב להיות מספר שלם בין 2 ל-20.');
+        return;
+      }
 
-    if (form.mode === 'group' && (!Number.isInteger(minRegistrations) || minRegistrations <= 0)) {
-      setErrorText('מינימום נרשמים חייב להיות מספר חיובי.');
-      return;
-    }
+      if (!form.minRegistrations.trim() || !Number.isInteger(minRegistrations) || minRegistrations < 2 || minRegistrations > 20) {
+        setErrorText('מינימום ילדים בשיעור קבוצתי חייב להיות מספר שלם בין 2 ל-20.');
+        return;
+      }
 
-    if (form.mode === 'group' && minRegistrations > capacity) {
-      setErrorText('מינימום נרשמים לא יכול להיות גדול מהקיבולת.');
-      return;
+      if (minRegistrations > capacity) {
+        setErrorText('מינימום ילדים לא יכול להיות גדול ממקסימום הילדים.');
+        return;
+      }
     }
 
     const payload = {
@@ -472,6 +733,7 @@ export default function InstructorLessonScheduler({ navigation, route }) {
       capacity,
       minRegistrations,
       generalNote: form.generalNote.trim(),
+      targetMetric: form.targetMetric ? form.targetMetric.trim() : '',
       recipients,
     };
 
@@ -492,7 +754,7 @@ export default function InstructorLessonScheduler({ navigation, route }) {
         ...defaultFormState,
         mode: prev.mode,
         capacity: prev.mode === 'private' ? '1' : '20',
-        minRegistrations: prev.mode === 'private' ? '1' : '5',
+        minRegistrations: prev.mode === 'private' ? '1' : '2',
       }));
       setSelectedRecipients({});
       setShowGroupDropdown(false);
@@ -511,13 +773,18 @@ export default function InstructorLessonScheduler({ navigation, route }) {
       <RoleHeader
         title="קביעת שיעור"
         onMenuPress={() => navigation.goBack()}
-        leftIcon="‹"
+        leftIcon="›"
         rightIcon="↻"
         rightLabel="רענון"
         onRightPress={refreshAll}
+        theme="dark"
       />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={!showGroupDropdown && !showMetricDropdown && !recipientDropdownOpen}
+      >
         <View style={styles.panel}>
           <Text style={styles.panelTitle}>סוג הזמנה</Text>
           <View style={styles.modeRow}>
@@ -547,54 +814,70 @@ export default function InstructorLessonScheduler({ navigation, route }) {
                 {form.meetingDate ? formatDisplayDate(form.meetingDate) : 'בחר תאריך'}
               </Text>
             </TouchableOpacity>
-            <TextInput
-              value={form.startTime}
-              onChangeText={(text) => setForm((prev) => ({ ...prev, startTime: text }))}
-              placeholder="התחלה HH:mm"
-              placeholderTextColor="#86A2B7"
-              style={[styles.input, styles.halfInput]}
-              textAlign="right"
-            />
+            <TouchableOpacity
+              activeOpacity={0.82}
+              style={[styles.input, styles.halfInput, styles.dateField]}
+              onPress={openStartTimePicker}
+            >
+              <Text style={[styles.dateFieldText, !form.startTime && styles.placeholderText]}>
+                {form.startTime ? form.startTime : 'התחלה'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {form.mode === 'group' ? (
             <>
               <View style={styles.row}>
-                <TextInput
-                  value={form.endTime}
-                  onChangeText={(text) => setForm((prev) => ({ ...prev, endTime: text }))}
-                  placeholder="סיום HH:mm"
-                  placeholderTextColor="#86A2B7"
-                  style={[styles.input, styles.halfInput]}
-                  textAlign="right"
-                />
-                <TextInput
-                  value={form.capacity}
-                  onChangeText={(text) => setForm((prev) => ({ ...prev, capacity: text }))}
-                  placeholder="קיבולת"
-                  placeholderTextColor="#86A2B7"
-                  keyboardType="numeric"
-                  style={[styles.input, styles.halfInput]}
-                  textAlign="right"
-                />
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  style={[styles.input, styles.halfInput, styles.dateField]}
+                  onPress={openEndTimePicker}
+                >
+                  <Text style={[styles.dateFieldText, !form.endTime && styles.placeholderText]}>
+                    {form.endTime ? form.endTime : 'סיום'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  style={[styles.input, styles.halfInput, styles.dateField]}
+                  onPress={() => {
+                    setShowGroupDropdown(false);
+                    setShowMetricDropdown(false);
+                    setRecipientDropdownOpen(false);
+                    setShowCapacityModal(true);
+                  }}
+                >
+                  <Text style={[styles.dateFieldText, !form.capacity && styles.placeholderText]}>
+                    {form.capacity ? `מקסימום ילדים: ${form.capacity}` : 'מקסימום ילדים'}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               <View style={styles.row}>
-                <TextInput
-                  value={form.minRegistrations}
-                  onChangeText={(text) => setForm((prev) => ({ ...prev, minRegistrations: text }))}
-                  placeholder="מינימום נרשמים"
-                  placeholderTextColor="#86A2B7"
-                  keyboardType="numeric"
-                  style={[styles.input, styles.halfInput]}
-                  textAlign="right"
-                />
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  style={[styles.input, styles.halfInput, styles.dateField]}
+                  onPress={() => {
+                    setShowGroupDropdown(false);
+                    setShowMetricDropdown(false);
+                    setRecipientDropdownOpen(false);
+                    setShowMinRegistrationsModal(true);
+                  }}
+                >
+                  <Text style={[styles.dateFieldText, !form.minRegistrations && styles.placeholderText]}>
+                    {form.minRegistrations ? `מינימום ילדים: ${form.minRegistrations}` : 'מינימום ילדים'}
+                  </Text>
+                </TouchableOpacity>
 
                 <View style={styles.halfInput}>
                   <TouchableOpacity
                     activeOpacity={0.82}
                     style={[styles.input, styles.groupDropdownTrigger]}
-                    onPress={() => setShowGroupDropdown((prev) => !prev)}
+                    onPress={() => {
+                      setShowMetricDropdown(false);
+                      setRecipientDropdownOpen(false);
+                      setShowGroupDropdown((prev) => !prev);
+                    }}
                   >
                     <Text style={[styles.groupDropdownValue, !selectedGroup && styles.placeholderText]}>
                       {selectedGroup ? selectedGroup.name : 'בחר קבוצה'}
@@ -602,7 +885,7 @@ export default function InstructorLessonScheduler({ navigation, route }) {
                   </TouchableOpacity>
 
                   {showGroupDropdown ? (
-                    <View style={styles.groupDropdownMenu}>
+                    <ScrollView style={styles.groupDropdownMenu} nestedScrollEnabled={true}>
                       {isLoadingGroups ? (
                         <Text style={styles.groupDropdownState}>טוען קבוצות...</Text>
                       ) : null}
@@ -624,26 +907,62 @@ export default function InstructorLessonScheduler({ navigation, route }) {
                           <Text style={styles.groupOptionText}>{group.name || `קבוצה ${group.groupId}`}</Text>
                         </TouchableOpacity>
                       ))}
-                    </View>
+                    </ScrollView>
                   ) : null}
                 </View>
               </View>
             </>
           ) : (
             <>
-              <TextInput
-                value={form.endTime}
-                onChangeText={(text) => setForm((prev) => ({ ...prev, endTime: text }))}
-                placeholder="סיום HH:mm"
-                placeholderTextColor="#86A2B7"
-                style={styles.input}
-                textAlign="right"
-              />
+              <TouchableOpacity
+                activeOpacity={0.82}
+                style={[styles.input, styles.dateField]}
+                onPress={openEndTimePicker}
+              >
+                <Text style={[styles.dateFieldText, !form.endTime && styles.placeholderText]}>
+                  {form.endTime ? form.endTime : 'סיום'}
+                </Text>
+              </TouchableOpacity>
               <View style={styles.privateFixedInfo}>
                 <Text style={styles.privateFixedInfoText}>בשיעור פרטי הקיבולת ומינימום הנרשמים נקבעים אוטומטית ל-1.</Text>
               </View>
             </>
           )}
+
+          {/* Target Metric Dropdown */}
+          <View style={{ zIndex: 10 }}>
+            <TouchableOpacity
+              activeOpacity={0.82}
+              style={[styles.input, styles.groupDropdownTrigger]}
+              onPress={() => {
+                setShowGroupDropdown(false);
+                setRecipientDropdownOpen(false);
+                setShowMetricDropdown((prev) => !prev);
+              }}
+            >
+              <Text style={[styles.groupDropdownValue, !form.targetMetric && styles.placeholderText]}>
+                {form.targetMetric ? `מדד מטרה: ${form.targetMetric}` : 'בחרו מדד מטרה (חובה)'}
+              </Text>
+            </TouchableOpacity>
+
+            {showMetricDropdown ? (
+              <ScrollView style={styles.groupDropdownMenu} nestedScrollEnabled={true}>
+                {METRIC_OPTIONS.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    activeOpacity={0.82}
+                    style={styles.groupOption}
+                    onPress={() => {
+                      setForm((prev) => ({ ...prev, targetMetric: opt.value }));
+                      setShowMetricDropdown(false);
+                    }}
+                  >
+                    <Text style={styles.groupOptionText}>{opt.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : null}
+          </View>
 
           <TextInput
             value={form.generalNote}
@@ -652,7 +971,6 @@ export default function InstructorLessonScheduler({ navigation, route }) {
             placeholderTextColor="#86A2B7"
             style={[styles.input, styles.multilineInput]}
             multiline
-            textAlign="right"
             textAlignVertical="top"
           />
         </View>
@@ -675,20 +993,26 @@ export default function InstructorLessonScheduler({ navigation, route }) {
                 activeOpacity={0.82}
                 style={[styles.input, styles.recipientDropdownTrigger]}
                 onPress={() => {
+                  if (form.mode === 'group' && !form.groupId) {
+                    setErrorText('יש לבחור קבוצה תחילה.');
+                    return;
+                  }
+                  setErrorText('');
                   setShowGroupDropdown(false);
+                  setShowMetricDropdown(false);
                   setRecipientDropdownOpen((prev) => !prev);
                 }}
               >
                 <Text style={[styles.groupDropdownValue, !draftRecipientOption && styles.placeholderText]}>
                   {draftRecipientOption
                     ? `${draftRecipientOption.parentFullName} (${draftRecipientOption.parentEmail || 'ללא מייל'}) • ${draftRecipientOption.childFullName}`
-                    : 'בחר הורה וילד'}
+                    : (form.mode === 'group' && !form.groupId ? 'נא לבחור קבוצה תחילה' : 'בחר הורה וילד')}
                 </Text>
               </TouchableOpacity>
 
               {recipientDropdownOpen ? (
                 <ScrollView style={styles.recipientDropdownMenu} nestedScrollEnabled>
-                  {recipientPool.map((item) => {
+                  {visibleRecipientOptions.map((item) => {
                     const key = recipientKey(item.parentId, item.childId);
                     const isChosen = !!selectedRecipients[key];
 
@@ -758,7 +1082,7 @@ export default function InstructorLessonScheduler({ navigation, route }) {
           colorsOverride={['#2f93dd', '#1c6cb2']}
         />
 
-        {Platform.OS !== 'android' ? (
+        {Platform.OS !== 'android' && showDateModal ? (
           <Modal
             visible={showDateModal}
             transparent
@@ -773,14 +1097,15 @@ export default function InstructorLessonScheduler({ navigation, route }) {
                   value={draftMeetingDate}
                   mode="date"
                   display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  textColor="#e7f7ff"
-                  accentColor="#57d1ff"
+                  textColor="#001529"
+                  accentColor="#0082b0"
                   locale="he-IL"
-                  minimumDate={parseIsoDate(getIsraelTodayIsoDate()) || new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())}
+                  minimumDate={parseIsoDate(getIsraelTodayIsoDate()) || new Date()}
                   maximumDate={new Date(2100, 11, 31)}
                   onChange={(_event, selectedDate) => {
                     if (selectedDate) {
                       setDraftMeetingDate(selectedDate);
+                      draftMeetingDateRef.current = selectedDate;
                     }
                   }}
                   style={styles.datePickerControl}
@@ -807,14 +1132,322 @@ export default function InstructorLessonScheduler({ navigation, route }) {
           </Modal>
         ) : null}
 
+        {showStartTimeModal ? (
+          <Modal
+            visible={showStartTimeModal}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowStartTimeModal(false)}
+          >
+            <View style={styles.dateModalOverlay}>
+              <View style={styles.dateModalCard}>
+                <Text style={styles.dateModalTitle}>בחירת שעת התחלה</Text>
+
+                <View style={styles.timePickerRow}>
+                  <View style={styles.timePickerColumn}>
+                    <Text style={styles.timePickerLabel}>דקות</Text>
+                    <ScrollView style={styles.timePickerScroll} nestedScrollEnabled>
+                      {Array.from({ length: 60 }, (_, i) => i).map((m) => {
+                        const now = new Date();
+                        const isToday = form.meetingDate === getIsraelTodayIsoDate();
+                        const selectedHour = draftStartTime.getHours();
+                        const isDisabled = isToday && selectedHour === now.getHours() && m <= now.getMinutes();
+                        const currentMin = draftStartTime.getMinutes();
+                        const isSelected = currentMin === m;
+                        return (
+                          <TouchableOpacity
+                            key={m}
+                            activeOpacity={0.8}
+                            disabled={isDisabled}
+                            style={[styles.timePickerItem, isSelected && styles.timePickerItemActive, isDisabled && styles.timePickerItemDisabled]}
+                            onPress={() => {
+                              const d = new Date(draftStartTime);
+                              d.setMinutes(m);
+                              setDraftStartTime(d);
+                              draftStartTimeRef.current = d;
+                            }}
+                          >
+                            <Text style={[styles.timePickerItemText, isSelected && styles.timePickerItemTextActive, isDisabled && styles.timePickerItemTextDisabled]}>
+                              {String(m).padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+
+                  <View style={styles.timePickerColumn}>
+                    <Text style={styles.timePickerLabel}>שעה</Text>
+                    <ScrollView style={styles.timePickerScroll} nestedScrollEnabled>
+                      {Array.from({ length: 24 }, (_, i) => i).map((h) => {
+                        const now = new Date();
+                        const isToday = form.meetingDate === getIsraelTodayIsoDate();
+                        const isDisabled = isToday && h < now.getHours();
+                        const currentHour = draftStartTime.getHours();
+                        const isSelected = currentHour === h;
+                        return (
+                          <TouchableOpacity
+                            key={h}
+                            activeOpacity={0.8}
+                            disabled={isDisabled}
+                            style={[styles.timePickerItem, isSelected && styles.timePickerItemActive, isDisabled && styles.timePickerItemDisabled]}
+                            onPress={() => {
+                              const d = new Date(draftStartTime);
+                              d.setHours(h);
+                              setDraftStartTime(d);
+                              draftStartTimeRef.current = d;
+                            }}
+                          >
+                            <Text style={[styles.timePickerItemText, isSelected && styles.timePickerItemTextActive, isDisabled && styles.timePickerItemTextDisabled]}>
+                              {String(h).padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                </View>
+
+                <View style={styles.dateModalActions}>
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    style={styles.dateModalButtonSecondary}
+                    onPress={() => setShowStartTimeModal(false)}
+                  >
+                    <Text style={styles.dateModalButtonSecondaryText}>ביטול</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    style={styles.dateModalButtonPrimary}
+                    onPress={saveStartTimeFromModal}
+                  >
+                    <Text style={styles.dateModalButtonPrimaryText}>שמירה</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        ) : null}
+
+        {showEndTimeModal ? (
+          <Modal
+            visible={showEndTimeModal}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowEndTimeModal(false)}
+          >
+            <View style={styles.dateModalOverlay}>
+              <View style={styles.dateModalCard}>
+                <Text style={styles.dateModalTitle}>בחירת שעת סיום</Text>
+
+                <View style={styles.timePickerRow}>
+                  <View style={styles.timePickerColumn}>
+                    <Text style={styles.timePickerLabel}>דקות</Text>
+                    <ScrollView style={styles.timePickerScroll} nestedScrollEnabled>
+                      {Array.from({ length: 60 }, (_, i) => i).map((m) => {
+                        const startH = form.startTime ? Number(form.startTime.split(':')[0]) : 0;
+                        const startM = form.startTime ? Number(form.startTime.split(':')[1]) : 0;
+                        const selectedHour = draftEndTime.getHours();
+                        const isDisabled = selectedHour === startH && m <= startM;
+                        const currentMin = draftEndTime.getMinutes();
+                        const isSelected = currentMin === m;
+                        return (
+                          <TouchableOpacity
+                            key={m}
+                            activeOpacity={0.8}
+                            disabled={isDisabled}
+                            style={[styles.timePickerItem, isSelected && styles.timePickerItemActive, isDisabled && styles.timePickerItemDisabled]}
+                            onPress={() => {
+                              const d = new Date(draftEndTime);
+                              d.setMinutes(m);
+                              setDraftEndTime(d);
+                              draftEndTimeRef.current = d;
+                            }}
+                          >
+                            <Text style={[styles.timePickerItemText, isSelected && styles.timePickerItemTextActive, isDisabled && styles.timePickerItemTextDisabled]}>
+                              {String(m).padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+
+                  <View style={styles.timePickerColumn}>
+                    <Text style={styles.timePickerLabel}>שעה</Text>
+                    <ScrollView style={styles.timePickerScroll} nestedScrollEnabled>
+                      {Array.from({ length: 24 }, (_, i) => i).map((h) => {
+                        const startH = form.startTime ? Number(form.startTime.split(':')[0]) : 0;
+                        const isDisabled = h < startH;
+                        const currentHour = draftEndTime.getHours();
+                        const isSelected = currentHour === h;
+                        return (
+                          <TouchableOpacity
+                            key={h}
+                            activeOpacity={0.8}
+                            disabled={isDisabled}
+                            style={[styles.timePickerItem, isSelected && styles.timePickerItemActive, isDisabled && styles.timePickerItemDisabled]}
+                            onPress={() => {
+                              const d = new Date(draftEndTime);
+                              d.setHours(h);
+                              setDraftEndTime(d);
+                              draftEndTimeRef.current = d;
+                            }}
+                          >
+                            <Text style={[styles.timePickerItemText, isSelected && styles.timePickerItemTextActive, isDisabled && styles.timePickerItemTextDisabled]}>
+                              {String(h).padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                </View>
+
+                <View style={styles.dateModalActions}>
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    style={styles.dateModalButtonSecondary}
+                    onPress={() => setShowEndTimeModal(false)}
+                  >
+                    <Text style={styles.dateModalButtonSecondaryText}>ביטול</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    style={styles.dateModalButtonPrimary}
+                    onPress={saveEndTimeFromModal}
+                  >
+                    <Text style={styles.dateModalButtonPrimaryText}>שמירה</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        ) : null}
+
+        <Modal
+          visible={showCapacityModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowCapacityModal(false)}
+        >
+          <View style={styles.dateModalOverlay}>
+            <View style={styles.dateModalCard}>
+              <Text style={styles.dateModalTitle}>בחירת מקסימום ילדים</Text>
+              
+              <View style={styles.numberGrid}>
+                {NUMBER_OPTIONS.map((num) => {
+                  const isSelected = Number(form.capacity) === num;
+                  return (
+                    <TouchableOpacity
+                      key={num}
+                      activeOpacity={0.8}
+                      style={[
+                        styles.numberGridItem,
+                        isSelected && styles.numberGridItemActive
+                      ]}
+                      onPress={() => {
+                        setForm((prev) => {
+                          const nextMin = Number(prev.minRegistrations) > num ? String(num) : prev.minRegistrations;
+                          return {
+                            ...prev,
+                            capacity: String(num),
+                            minRegistrations: nextMin,
+                          };
+                        });
+                        setShowCapacityModal(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.numberGridItemText,
+                          isSelected && styles.numberGridItemTextActive
+                        ]}
+                      >
+                        {num}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.dateModalActions}>
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  style={styles.dateModalButtonSecondary}
+                  onPress={() => setShowCapacityModal(false)}
+                >
+                  <Text style={styles.dateModalButtonSecondaryText}>ביטול</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={showMinRegistrationsModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowMinRegistrationsModal(false)}
+        >
+          <View style={styles.dateModalOverlay}>
+            <View style={styles.dateModalCard}>
+              <Text style={styles.dateModalTitle}>בחירת מינימום ילדים</Text>
+              
+              <View style={styles.numberGrid}>
+                {NUMBER_OPTIONS.map((num) => {
+                  const isSelected = Number(form.minRegistrations) === num;
+                  const isDisabled = num > Number(form.capacity);
+                  return (
+                    <TouchableOpacity
+                      key={num}
+                      disabled={isDisabled}
+                      activeOpacity={0.8}
+                      style={[
+                        styles.numberGridItem,
+                        isSelected && styles.numberGridItemActive,
+                        isDisabled && styles.numberGridItemDisabled
+                      ]}
+                      onPress={() => {
+                        setForm((prev) => ({ ...prev, minRegistrations: String(num) }));
+                        setShowMinRegistrationsModal(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.numberGridItemText,
+                          isSelected && styles.numberGridItemTextActive,
+                          isDisabled && styles.numberGridItemTextDisabled
+                        ]}
+                      >
+                        {num}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.dateModalActions}>
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  style={styles.dateModalButtonSecondary}
+                  onPress={() => setShowMinRegistrationsModal(false)}
+                >
+                  <Text style={styles.dateModalButtonSecondaryText}>ביטול</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#001529' },
-  content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24, gap: 12 },
+  safeArea: { flex: 1, backgroundColor: '#001529', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
+  content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 48, gap: 12 },
   panel: {
     backgroundColor: 'rgba(7, 60, 98, 0.68)',
     borderRadius: 16,
@@ -824,20 +1457,22 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   panelTitle: {
+    width: '100%',
     color: '#e7f8ff',
     fontSize: 16,
     fontWeight: '800',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   helperText: {
+    width: '100%',
     color: 'rgba(223, 242, 255, 0.86)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   modeRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 10,
   },
   modeChip: {
@@ -861,7 +1496,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   row: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 10,
   },
   input: {
@@ -873,14 +1508,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#e6f8ff',
     backgroundColor: 'rgba(13, 89, 140, 0.56)',
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
   dateField: {
     justifyContent: 'center',
   },
   dateFieldText: {
+    width: '100%',
     fontSize: 14,
     color: '#e6f8ff',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   placeholderText: {
@@ -890,9 +1528,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   groupDropdownValue: {
+    width: '100%',
     fontSize: 14,
     color: '#e6f8ff',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   groupDropdownMenu: {
@@ -909,7 +1548,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     color: 'rgba(210, 237, 255, 0.88)',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   groupOption: {
@@ -921,7 +1560,7 @@ const styles = StyleSheet.create({
   groupOptionText: {
     color: '#e6f8ff',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   privateFixedInfo: {
@@ -935,7 +1574,7 @@ const styles = StyleSheet.create({
   privateFixedInfoText: {
     color: 'rgba(216, 240, 255, 0.88)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   halfInput: {
@@ -945,7 +1584,7 @@ const styles = StyleSheet.create({
     minHeight: 74,
   },
   recipientPickerRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 8,
     alignItems: 'flex-start',
   },
@@ -973,14 +1612,14 @@ const styles = StyleSheet.create({
     color: '#e4f8ff',
     fontSize: 13,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   recipientOptionSubtitle: {
     marginTop: 3,
     color: 'rgba(205, 235, 255, 0.84)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   addRecipientButton: {
@@ -1009,10 +1648,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   selectedRecipientsTitle: {
+    width: '100%',
     color: '#e9f9ff',
     fontSize: 13,
     fontWeight: '800',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   selectedRecipientRow: {
@@ -1027,17 +1667,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   selectedRecipientTitle: {
+    width: '100%',
     color: '#e6f8ff',
     fontSize: 13,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   selectedRecipientSubtitle: {
+    width: '100%',
     marginTop: 2,
     color: 'rgba(214, 240, 255, 0.86)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   removeRecipientButton: {
@@ -1054,21 +1696,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   stateText: {
+    width: '100%',
     color: 'rgba(220, 241, 255, 0.86)',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   errorText: {
+    width: '100%',
     color: '#ffd0d8',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   successText: {
+    width: '100%',
     color: '#abffe0',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   buttonShell: { marginTop: 2 },
@@ -1089,18 +1734,23 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(140, 220, 255, 0.38)',
   },
   dateModalTitle: {
+    width: '100%',
     color: '#e8f8ff',
     fontSize: 16,
     fontWeight: '800',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   datePickerControl: {
-    backgroundColor: 'rgba(9, 76, 122, 0.88)',
+    backgroundColor: '#ffffff',
     borderRadius: 12,
+    height: 180,
+    width: 260,
+    alignSelf: 'center',
+    justifyContent: 'center',
   },
   dateModalActions: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 10,
   },
   dateModalButtonPrimary: {
@@ -1130,5 +1780,89 @@ const styles = StyleSheet.create({
     color: '#e2f7ff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  numberGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginVertical: 12,
+  },
+  numberGridItem: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: 'rgba(136, 214, 255, 0.3)',
+    backgroundColor: 'rgba(13, 89, 140, 0.56)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  numberGridItemActive: {
+    backgroundColor: '#1b8bce',
+    borderColor: '#71d8ff',
+  },
+  numberGridItemText: {
+    color: '#e6f8ff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  numberGridItemTextActive: {
+    color: '#ffffff',
+    fontWeight: '800',
+  },
+  numberGridItemDisabled: {
+    backgroundColor: 'rgba(10, 30, 50, 0.3)',
+    borderColor: 'rgba(136, 214, 255, 0.1)',
+  },
+  numberGridItemTextDisabled: {
+    color: 'rgba(230, 248, 255, 0.25)',
+  },
+  timePickerRow: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'center',
+  },
+  timePickerColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  timePickerLabel: {
+    color: '#e8f8ff',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  timePickerScroll: {
+    maxHeight: 200,
+    width: '100%',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(136, 214, 255, 0.3)',
+    backgroundColor: 'rgba(13, 89, 140, 0.4)',
+  },
+  timePickerItem: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(136, 214, 255, 0.15)',
+  },
+  timePickerItemActive: {
+    backgroundColor: '#1b8bce',
+  },
+  timePickerItemText: {
+    color: '#e6f8ff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  timePickerItemTextActive: {
+    color: '#ffffff',
+    fontWeight: '800',
+  },
+  timePickerItemDisabled: {
+    backgroundColor: 'rgba(10, 30, 50, 0.3)',
+  },
+  timePickerItemTextDisabled: {
+    color: 'rgba(230, 248, 255, 0.25)',
   },
 });

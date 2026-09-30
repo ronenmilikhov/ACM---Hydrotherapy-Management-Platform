@@ -106,12 +106,12 @@ export default function ManagerAttendanceReport({ navigation, route }) {
   }, [loadAttendanceData]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
       <LoginAquaticBackground />
       <RoleHeader
         title={'נוכחות קבוצות'}
-        leftIcon="←"
+        leftIcon="›"
         onLeftPress={goToManagerHomepage}
         showRightButton={false}
         theme="dark"
@@ -207,6 +207,6 @@ export default function ManagerAttendanceReport({ navigation, route }) {
             : null}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

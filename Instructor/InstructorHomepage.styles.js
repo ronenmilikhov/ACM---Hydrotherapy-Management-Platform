@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     textAlign: 'center',
     color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     writingDirection: 'rtl',
   },

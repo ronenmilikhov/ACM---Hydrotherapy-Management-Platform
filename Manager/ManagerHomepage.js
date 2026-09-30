@@ -17,6 +17,19 @@ import PrimaryButton from '../components/ui/PrimaryButton';
 import LoginAquaticBackground from '../components/ui/LoginAquaticBackground';
 import { API_BASE_URL, buildAuthHeaders, buildJsonAuthHeaders } from '../apiConfig';
 
+const SWIMMING_SKILL_AREAS = [
+  { key: 'water_confidence', label: 'הסתגלות וביטחון במים' },
+  { key: 'breathing', label: 'שליטה בנשימות' },
+  { key: 'coordination', label: 'תנועתיות וקואורדינציה' },
+  { key: 'floating', label: 'יציבה וציפה' },
+  { key: 'communication', label: 'תקשורת במים ושיתוף פעולה' },
+  { key: 'persistence', label: 'התמדה ומאמץ' },
+  { key: 'initiative', label: 'יוזמה' },
+  { key: 'focus', label: 'קשב וריכוז' },
+  { key: 'instructions', label: 'תגובה להוראות' },
+  { key: 'independence', label: 'עצמאות בתרגיל' },
+];
+
 const StatCard = ({ number, label, variant }) => (
   <View style={[styles.statCard, variant === 'warm' ? styles.statCardWarm : styles.statCardCool]}>
     <Text style={[styles.statNumber, variant === 'warm' ? styles.statNumberWarm : styles.statNumberCool]}>
@@ -86,6 +99,8 @@ export default function ManagerHomepage({ navigation, route }) {
   const [newChildBirthDate, setNewChildBirthDate] = useState('');
   const [newChildDescription, setNewChildDescription] = useState('');
   const [newChildParentId, setNewChildParentId] = useState(null);
+  const [newChildStrengths, setNewChildStrengths] = useState([]);
+  const [newChildWeaknesses, setNewChildWeaknesses] = useState([]);
   const [editInstructorId, setEditInstructorId] = useState(null);
   const [editInstructorFirstName, setEditInstructorFirstName] = useState('');
   const [editInstructorLastName, setEditInstructorLastName] = useState('');
@@ -100,6 +115,8 @@ export default function ManagerHomepage({ navigation, route }) {
   const [editChildBirthDate, setEditChildBirthDate] = useState('');
   const [editChildDescription, setEditChildDescription] = useState('');
   const [editChildParentId, setEditChildParentId] = useState(null);
+  const [editChildStrengths, setEditChildStrengths] = useState([]);
+  const [editChildWeaknesses, setEditChildWeaknesses] = useState([]);
   const [editChildGroupId, setEditChildGroupId] = useState(null);
   const [originalEditChildGroupId, setOriginalEditChildGroupId] = useState(null);
   const [originalEditChildGroupName, setOriginalEditChildGroupName] = useState('');
@@ -388,6 +405,9 @@ export default function ManagerHomepage({ navigation, route }) {
             parentEmail,
             parentFullName,
             parentDisplayLabel: `הורה: ${parentNameForDisplay}${parentEmailSuffix}`,
+            strengths: child?.strengths || '',
+            weaknesses: child?.weaknesses || '',
+            personalGoals: child?.personalGoals || '',
           };
         })
         .filter((child) => child.childId > 0);
@@ -582,6 +602,8 @@ export default function ManagerHomepage({ navigation, route }) {
     setNewChildBirthDate('');
     setNewChildDescription('');
     setNewChildParentId(null);
+    setNewChildStrengths([]);
+    setNewChildWeaknesses([]);
     setIsCreateChildParentDropdownOpen(false);
     setCreateChildErrors({
       firstName: '',
@@ -920,6 +942,8 @@ export default function ManagerHomepage({ navigation, route }) {
           lastName,
           birthDate: birthDate || null,
           childDescription,
+          strengths: newChildStrengths.length > 0 ? newChildStrengths : null,
+          weaknesses: newChildWeaknesses.length > 0 ? newChildWeaknesses : null,
         }),
       });
 
@@ -1357,6 +1381,8 @@ export default function ManagerHomepage({ navigation, route }) {
     setEditChildBirthDate(child.birthDate || '');
     setEditChildDescription(child.childDescription || '');
     setEditChildParentId(child.parentId || null);
+    setEditChildStrengths(child.strengths ? (typeof child.strengths === 'string' ? JSON.parse(child.strengths) : child.strengths) : []);
+    setEditChildWeaknesses(child.weaknesses ? (typeof child.weaknesses === 'string' ? JSON.parse(child.weaknesses) : child.weaknesses) : []);
     setEditChildGroupId(activeGroupId);
     setOriginalEditChildGroupId(activeGroupId);
     setOriginalEditChildGroupName(String(child.activeGroupName || '').trim());
@@ -1378,6 +1404,8 @@ export default function ManagerHomepage({ navigation, route }) {
     setEditChildBirthDate('');
     setEditChildDescription('');
     setEditChildParentId(null);
+    setEditChildStrengths([]);
+    setEditChildWeaknesses([]);
     setEditChildGroupId(null);
     setOriginalEditChildGroupId(null);
     setOriginalEditChildGroupName('');
@@ -1699,6 +1727,8 @@ export default function ManagerHomepage({ navigation, route }) {
           birthDate: birthDate || null,
           childDescription: childDescription || null,
           isActive: true,
+          strengths: editChildStrengths.length > 0 ? editChildStrengths : null,
+          weaknesses: editChildWeaknesses.length > 0 ? editChildWeaknesses : null,
         }),
       });
 
@@ -2005,18 +2035,38 @@ export default function ManagerHomepage({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} onStartShouldSetResponderCapture={dismissKeyboardOnTouchCapture}>
+    <View style={styles.safeArea} onStartShouldSetResponderCapture={dismissKeyboardOnTouchCapture}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       <LoginAquaticBackground />
 
       <View style={styles.topHeaderRow}>
-        <TouchableOpacity style={styles.logoutButton} activeOpacity={0.85} onPress={handleDisconnect}>
-          <Text style={styles.logoutButtonText}>התנתקות</Text>
-        </TouchableOpacity>
-
         <View style={styles.topHeaderTextWrap}>
           <Text style={styles.topHeaderTitle}>פאנל מנהל</Text>
+        </View>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => {
+              if (!ensureManagerAuth('להיכנס לצ\'אט AI')) {
+                return;
+              }
+              navigation.navigate('ChatPage', {
+                fromInstructor: true,
+                isAiChat: true,
+                isManager: true,
+                instructorId: Number(managerAuth?.id ?? 0),
+                instructorName: String(managerAuth?.fullName ?? 'מנהל'),
+              });
+            }}
+            style={[styles.logoutButton, { backgroundColor: 'rgba(0, 212, 255, 0.2)', borderColor: 'rgba(0, 212, 255, 0.45)' }]}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.logoutButtonText, { color: '#00d4ff' }]}>✨ AI צ'אט</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.logoutButton} activeOpacity={0.85} onPress={handleDisconnect}>
+            <Text style={styles.logoutButtonText}>התנתקות</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -2077,35 +2127,44 @@ export default function ManagerHomepage({ navigation, route }) {
 
             {filteredInstructors.length === 0 ? (
               <Text style={styles.managementEmptyText}>לא נמצאו מדריכים.</Text>
-            ) : filteredInstructors.map((instructor) => (
-              <View key={instructor.instructorId} style={styles.managementRow}>
-                <View style={styles.managementRowActions}>
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={styles.entityEditButton}
-                    onPress={() => openEditInstructorModal(instructor)}
-                  >
-                    <Text style={styles.entityEditButtonText}>עריכה</Text>
-                  </TouchableOpacity>
+            ) : (
+              <ScrollView
+                style={styles.managementListContainer}
+                contentContainerStyle={styles.managementListContent}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
+                {filteredInstructors.map((instructor) => (
+                  <View key={instructor.instructorId} style={styles.managementRow}>
+                    <View style={styles.managementRowTextWrap}>
+                      <Text style={styles.managementRowTitle}>{instructor.fullName || instructor.email}</Text>
+                      <Text style={styles.managementRowMeta}>{instructor.email}</Text>
+                      {Array.isArray(instructor.groupNames) && instructor.groupNames.length > 0 ? (
+                        <Text style={styles.managementRowSubMeta}>קבוצות: {instructor.groupNames.join(', ')}</Text>
+                      ) : null}
+                    </View>
 
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={styles.entityDeleteButton}
-                    onPress={() => confirmDeleteInstructor(instructor)}
-                  >
-                    <Text style={styles.entityDeleteButtonText}>מחיקה</Text>
-                  </TouchableOpacity>
-                </View>
+                    <View style={styles.managementRowActions}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={styles.entityEditButton}
+                        onPress={() => openEditInstructorModal(instructor)}
+                      >
+                        <Text style={styles.entityEditButtonText}>עריכה</Text>
+                      </TouchableOpacity>
 
-                <View style={styles.managementRowTextWrap}>
-                  <Text style={styles.managementRowTitle}>{instructor.fullName || instructor.email}</Text>
-                  <Text style={styles.managementRowMeta}>{instructor.email}</Text>
-                  {Array.isArray(instructor.groupNames) && instructor.groupNames.length > 0 ? (
-                    <Text style={styles.managementRowSubMeta}>קבוצות: {instructor.groupNames.join(', ')}</Text>
-                  ) : null}
-                </View>
-              </View>
-            ))}
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={styles.entityDeleteButton}
+                        onPress={() => confirmDeleteInstructor(instructor)}
+                      >
+                        <Text style={styles.entityDeleteButtonText}>מחיקה</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
           </View>
 
           <View style={styles.managementSectionWrap}>
@@ -2121,38 +2180,47 @@ export default function ManagerHomepage({ navigation, route }) {
 
             {filteredParents.length === 0 ? (
               <Text style={styles.managementEmptyText}>לא נמצאו הורים.</Text>
-            ) : filteredParents.map((parent) => (
-              <View key={parent.parentId} style={styles.managementRow}>
-                <View style={styles.managementRowActions}>
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={styles.entityEditButton}
-                    onPress={() => openEditParentModal(parent)}
-                  >
-                    <Text style={styles.entityEditButtonText}>עריכה</Text>
-                  </TouchableOpacity>
+            ) : (
+              <ScrollView
+                style={styles.managementListContainer}
+                contentContainerStyle={styles.managementListContent}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
+                {filteredParents.map((parent) => (
+                  <View key={parent.parentId} style={styles.managementRow}>
+                    <View style={styles.managementRowTextWrap}>
+                      <Text style={styles.managementRowTitle}>{parent.fullName || parent.email}</Text>
+                      <Text style={styles.managementRowMeta}>{parent.email}</Text>
+                      {parent.phone ? (
+                        <Text style={styles.managementRowSubMeta}>טלפון: {parent.phone}</Text>
+                      ) : null}
+                      {Array.isArray(parent.childNames) && parent.childNames.length > 0 ? (
+                        <Text style={styles.managementRowSubMeta}>ילדים: {parent.childNames.join(', ')}</Text>
+                      ) : null}
+                    </View>
 
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={styles.entityDeleteButton}
-                    onPress={() => confirmDeleteParent(parent)}
-                  >
-                    <Text style={styles.entityDeleteButtonText}>מחיקה</Text>
-                  </TouchableOpacity>
-                </View>
+                    <View style={styles.managementRowActions}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={styles.entityEditButton}
+                        onPress={() => openEditParentModal(parent)}
+                      >
+                        <Text style={styles.entityEditButtonText}>עריכה</Text>
+                      </TouchableOpacity>
 
-                <View style={styles.managementRowTextWrap}>
-                  <Text style={styles.managementRowTitle}>{parent.fullName || parent.email}</Text>
-                  <Text style={styles.managementRowMeta}>{parent.email}</Text>
-                  {parent.phone ? (
-                    <Text style={styles.managementRowSubMeta}>טלפון: {parent.phone}</Text>
-                  ) : null}
-                  {Array.isArray(parent.childNames) && parent.childNames.length > 0 ? (
-                    <Text style={styles.managementRowSubMeta}>ילדים: {parent.childNames.join(', ')}</Text>
-                  ) : null}
-                </View>
-              </View>
-            ))}
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={styles.entityDeleteButton}
+                        onPress={() => confirmDeleteParent(parent)}
+                      >
+                        <Text style={styles.entityDeleteButtonText}>מחיקה</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
           </View>
 
           <View style={styles.managementSectionWrap}>
@@ -2168,43 +2236,71 @@ export default function ManagerHomepage({ navigation, route }) {
 
             {filteredChildren.length === 0 ? (
               <Text style={styles.managementEmptyText}>לא נמצאו ילדים.</Text>
-            ) : filteredChildren.map((child) => (
-              <View key={child.childId} style={styles.managementRow}>
-                <View style={styles.managementRowActions}>
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={styles.entityEditButton}
-                    onPress={() => openEditChildModal(child)}
-                  >
-                    <Text style={styles.entityEditButtonText}>עריכה</Text>
-                  </TouchableOpacity>
+            ) : (
+              <ScrollView
+                style={styles.managementListContainer}
+                contentContainerStyle={styles.managementListContent}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
+                {filteredChildren.map((child) => (
+                  <View key={child.childId} style={styles.managementRow}>
+                    <View style={styles.managementRowTextWrap}>
+                      <Text style={styles.managementRowTitle}>{child.fullName}</Text>
+                      <Text style={styles.managementRowMeta}>{child.parentDisplayLabel}</Text>
+                      {child.activeGroupName ? (
+                        <Text style={styles.managementRowSubMeta}>קבוצה: {child.activeGroupName}</Text>
+                      ) : null}
+                      {child.activeGroupName ? (
+                        <Text style={styles.managementRowSubMeta}>
+                          מדריך: {child.assignedInstructorDisplay || 'לא משויך'}
+                        </Text>
+                      ) : null}
+                      {child.birthDate ? (
+                        <Text style={styles.managementRowSubMeta}>תאריך לידה: {child.birthDate}</Text>
+                      ) : null}
+                      {child.personalGoals && child.personalGoals.length > 0 ? (
+                        <View style={styles.personalGoalsSection}>
+                          <Text style={[styles.managementRowSubMeta, { fontWeight: '700', marginBottom: 6 }]}>יעדים אישיים:</Text>
+                          {(typeof child.personalGoals === 'string' ? JSON.parse(child.personalGoals) : child.personalGoals).map((goal, idx) => (
+                            <View key={`goal-${child.childId}-${idx}`} style={styles.personalGoalItem}>
+                              <Text style={styles.personalGoalIcon}>{goal.type === 'weakness' ? '🎯' : '⭐'}</Text>
+                              <View style={styles.personalGoalTextWrap}>
+                                <Text style={[
+                                  styles.personalGoalType,
+                                  goal.type === 'weakness' ? styles.personalGoalTypeWeakness : styles.personalGoalTypeStrength,
+                                ]}>
+                                  {goal.areaLabel} — {goal.typeLabel}
+                                </Text>
+                                <Text style={styles.personalGoalText}>{goal.goal}</Text>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+                    </View>
 
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={styles.entityDeleteButton}
-                    onPress={() => confirmDeleteChild(child)}
-                  >
-                    <Text style={styles.entityDeleteButtonText}>מחיקה</Text>
-                  </TouchableOpacity>
-                </View>
+                    <View style={styles.managementRowActions}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={styles.entityEditButton}
+                        onPress={() => openEditChildModal(child)}
+                      >
+                        <Text style={styles.entityEditButtonText}>עריכה</Text>
+                      </TouchableOpacity>
 
-                <View style={styles.managementRowTextWrap}>
-                  <Text style={styles.managementRowTitle}>{child.fullName}</Text>
-                  <Text style={styles.managementRowMeta}>{child.parentDisplayLabel}</Text>
-                  {child.activeGroupName ? (
-                    <Text style={styles.managementRowSubMeta}>קבוצה: {child.activeGroupName}</Text>
-                  ) : null}
-                  {child.activeGroupName ? (
-                    <Text style={styles.managementRowSubMeta}>
-                      מדריך: {child.assignedInstructorDisplay || 'לא משויך'}
-                    </Text>
-                  ) : null}
-                  {child.birthDate ? (
-                    <Text style={styles.managementRowSubMeta}>תאריך לידה: {child.birthDate}</Text>
-                  ) : null}
-                </View>
-              </View>
-            ))}
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={styles.entityDeleteButton}
+                        onPress={() => confirmDeleteChild(child)}
+                      >
+                        <Text style={styles.entityDeleteButtonText}>מחיקה</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
           </View>
 
           <View style={styles.managementSectionWrap}>
@@ -2220,71 +2316,80 @@ export default function ManagerHomepage({ navigation, route }) {
 
             {filteredGroups.length === 0 ? (
               <Text style={styles.managementEmptyText}>לא נמצאו קבוצות.</Text>
-            ) : filteredGroups.map((group) => {
-              const groupChildNames = childNamesByGroupId.get(group.groupId) || [];
-              const isChildrenExpanded = expandedGroupChildrenId === group.groupId;
+            ) : (
+              <ScrollView
+                style={styles.managementListContainer}
+                contentContainerStyle={styles.managementListContent}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
+                {filteredGroups.map((group) => {
+                  const groupChildNames = childNamesByGroupId.get(group.groupId) || [];
+                  const isChildrenExpanded = expandedGroupChildrenId === group.groupId;
 
-              return (
-                <View key={group.groupId} style={styles.managementRow}>
-                  <View style={styles.managementRowActions}>
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      style={styles.entityEditButton}
-                      onPress={() => openEditGroupModal(group)}
-                    >
-                      <Text style={styles.entityEditButtonText}>עריכה</Text>
-                    </TouchableOpacity>
+                  return (
+                    <View key={group.groupId} style={styles.managementRow}>
+                      <View style={styles.managementRowTextWrap}>
+                        <Text style={styles.managementRowTitle}>{group.name}</Text>
+                        <Text style={styles.managementRowMeta}>
+                          מדריך: {group.instructorEmail && group.instructorFullName
+                            ? `${group.instructorEmail} - ${group.instructorFullName}`
+                            : group.instructorEmail || group.instructorFullName || 'לא משויך'}
+                        </Text>
+                        <Text style={styles.managementRowSubMeta}>ילדים פעילים: {group.activeChildrenCount}</Text>
+                        {group.description ? (
+                          <Text style={styles.managementRowSubMeta}>תיאור: {group.description}</Text>
+                        ) : null}
 
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      style={styles.entityDeleteButton}
-                      onPress={() => confirmDeleteGroup(group)}
-                    >
-                      <Text style={styles.entityDeleteButtonText}>מחיקה</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.managementRowTextWrap}>
-                    <Text style={styles.managementRowTitle}>{group.name}</Text>
-                    <Text style={styles.managementRowMeta}>
-                      מדריך: {group.instructorEmail && group.instructorFullName
-                        ? `${group.instructorEmail} - ${group.instructorFullName}`
-                        : group.instructorEmail || group.instructorFullName || 'לא משויך'}
-                    </Text>
-                    <Text style={styles.managementRowSubMeta}>ילדים פעילים: {group.activeChildrenCount}</Text>
-                    {group.description ? (
-                      <Text style={styles.managementRowSubMeta}>תיאור: {group.description}</Text>
-                    ) : null}
-
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      style={styles.groupChildrenToggle}
-                      onPress={() => setExpandedGroupChildrenId((prevGroupId) => (
-                        prevGroupId === group.groupId ? null : group.groupId
-                      ))}
-                    >
-                      <Text style={styles.groupChildrenToggleText}>
-                        {isChildrenExpanded
-                          ? 'הסתר ילדים ▲'
-                          : `הצג ילדים (${groupChildNames.length}) ▼`}
-                      </Text>
-                    </TouchableOpacity>
-
-                    {isChildrenExpanded ? (
-                      <View style={styles.groupChildrenDropdownPanel}>
-                        {groupChildNames.length === 0 ? (
-                          <Text style={styles.groupChildrenEmptyText}>אין ילדים משויכים לקבוצה זו.</Text>
-                        ) : groupChildNames.map((childName) => (
-                          <Text key={`${group.groupId}-${childName}`} style={styles.groupChildrenName}>
-                            • {childName}
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          style={styles.groupChildrenToggle}
+                          onPress={() => setExpandedGroupChildrenId((prevGroupId) => (
+                            prevGroupId === group.groupId ? null : group.groupId
+                          ))}
+                        >
+                          <Text style={styles.groupChildrenToggleText}>
+                            {isChildrenExpanded
+                              ? 'הסתר ילדים ▲'
+                              : `הצג ילדים (${groupChildNames.length}) ▼`}
                           </Text>
-                        ))}
+                        </TouchableOpacity>
+
+                        {isChildrenExpanded ? (
+                          <View style={styles.groupChildrenDropdownPanel}>
+                            {groupChildNames.length === 0 ? (
+                              <Text style={styles.groupChildrenEmptyText}>אין ילדים משויכים לקבוצה זו.</Text>
+                            ) : groupChildNames.map((childName) => (
+                              <Text key={`${group.groupId}-${childName}`} style={styles.groupChildrenName}>
+                                • {childName}
+                              </Text>
+                            ))}
+                          </View>
+                        ) : null}
                       </View>
-                    ) : null}
-                  </View>
-                </View>
-              );
-            })}
+
+                      <View style={styles.managementRowActions}>
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          style={styles.entityEditButton}
+                          onPress={() => openEditGroupModal(group)}
+                        >
+                          <Text style={styles.entityEditButtonText}>עריכה</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          style={styles.entityDeleteButton}
+                          onPress={() => confirmDeleteGroup(group)}
+                        >
+                          <Text style={styles.entityDeleteButtonText}>מחיקה</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
           </View>
 
           {!hasManagerAuth ? (
@@ -2301,7 +2406,8 @@ export default function ManagerHomepage({ navigation, route }) {
       >
         <View style={styles.modalBackdrop} onStartShouldSetResponderCapture={dismissKeyboardOnTouchCapture}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>יצירת קבוצה חדשה</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} nestedScrollEnabled>
+              <Text style={styles.modalTitle}>יצירת קבוצה חדשה</Text>
             <Text style={styles.modalSubtitle}>הקבוצה החדשה תקבל מדריך יחיד אחד.</Text>
 
             <Text style={styles.fieldLabel}>שם קבוצה</Text>
@@ -2423,6 +2529,7 @@ export default function ManagerHomepage({ navigation, route }) {
                 <Text style={styles.modalCancelButtonText}>ביטול</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2435,7 +2542,8 @@ export default function ManagerHomepage({ navigation, route }) {
       >
         <View style={styles.modalBackdrop} onStartShouldSetResponderCapture={dismissKeyboardOnTouchCapture}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>יצירת מדריך חדש</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} nestedScrollEnabled>
+              <Text style={styles.modalTitle}>יצירת מדריך חדש</Text>
             <Text style={styles.modalSubtitle}>יש למלא את כל השדות כדי ליצור חשבון מדריך.</Text>
 
             <Text style={styles.fieldLabel}>שם פרטי</Text>
@@ -2528,6 +2636,7 @@ export default function ManagerHomepage({ navigation, route }) {
                 <Text style={styles.modalCancelButtonText}>ביטול</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2540,7 +2649,8 @@ export default function ManagerHomepage({ navigation, route }) {
       >
         <View style={styles.modalBackdrop} onStartShouldSetResponderCapture={dismissKeyboardOnTouchCapture}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>יצירת הורה חדש</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} nestedScrollEnabled>
+              <Text style={styles.modalTitle}>יצירת הורה חדש</Text>
             <Text style={styles.modalSubtitle}>יש למלא שם, אימייל וסיסמה כדי ליצור חשבון הורה.</Text>
 
             <Text style={styles.fieldLabel}>שם פרטי</Text>
@@ -2652,6 +2762,7 @@ export default function ManagerHomepage({ navigation, route }) {
                 <Text style={styles.modalCancelButtonText}>ביטול</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2664,163 +2775,231 @@ export default function ManagerHomepage({ navigation, route }) {
       >
         <View style={styles.modalBackdrop} onStartShouldSetResponderCapture={dismissKeyboardOnTouchCapture}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>יצירת ילד חדש</Text>
-            <Text style={styles.modalSubtitle}>יש למלא שם פרטי, שם משפחה ולבחור הורה.</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator nestedScrollEnabled>
+              <Text style={styles.modalTitle}>יצירת ילד חדש</Text>
+              <Text style={styles.modalSubtitle}>יש למלא שם פרטי, שם משפחה ולבחור הורה.</Text>
 
-            <Text style={styles.fieldLabel}>שם פרטי</Text>
-            <TextInput
-              value={newChildFirstName}
-              onChangeText={(value) => {
-                setNewChildFirstName(value);
-                if (createChildErrors.firstName && value.trim()) {
-                  setCreateChildErrors((prev) => ({ ...prev, firstName: '' }));
-                }
-              }}
-              style={[styles.input, createChildErrors.firstName ? styles.inputError : null]}
-              placeholder="שם פרטי"
-              placeholderTextColor="#98A3AD"
-              textAlign="right"
-            />
-            {createChildErrors.firstName ? (
-              <Text style={styles.fieldErrorText}>{createChildErrors.firstName}</Text>
-            ) : null}
+              <Text style={styles.fieldLabel}>שם פרטי</Text>
+              <TextInput
+                value={newChildFirstName}
+                onChangeText={(value) => {
+                  setNewChildFirstName(value);
+                  if (createChildErrors.firstName && value.trim()) {
+                    setCreateChildErrors((prev) => ({ ...prev, firstName: '' }));
+                  }
+                }}
+                style={[styles.input, createChildErrors.firstName ? styles.inputError : null]}
+                placeholder="שם פרטי"
+                placeholderTextColor="#98A3AD"
+                textAlign="right"
+              />
+              {createChildErrors.firstName ? (
+                <Text style={styles.fieldErrorText}>{createChildErrors.firstName}</Text>
+              ) : null}
 
-            <Text style={styles.fieldLabel}>שם משפחה</Text>
-            <TextInput
-              value={newChildLastName}
-              onChangeText={(value) => {
-                setNewChildLastName(value);
-                if (createChildErrors.lastName && value.trim()) {
-                  setCreateChildErrors((prev) => ({ ...prev, lastName: '' }));
-                }
-              }}
-              style={[styles.input, createChildErrors.lastName ? styles.inputError : null]}
-              placeholder="שם משפחה"
-              placeholderTextColor="#98A3AD"
-              textAlign="right"
-            />
-            {createChildErrors.lastName ? (
-              <Text style={styles.fieldErrorText}>{createChildErrors.lastName}</Text>
-            ) : null}
+              <Text style={styles.fieldLabel}>שם משפחה</Text>
+              <TextInput
+                value={newChildLastName}
+                onChangeText={(value) => {
+                  setNewChildLastName(value);
+                  if (createChildErrors.lastName && value.trim()) {
+                    setCreateChildErrors((prev) => ({ ...prev, lastName: '' }));
+                  }
+                }}
+                style={[styles.input, createChildErrors.lastName ? styles.inputError : null]}
+                placeholder="שם משפחה"
+                placeholderTextColor="#98A3AD"
+                textAlign="right"
+              />
+              {createChildErrors.lastName ? (
+                <Text style={styles.fieldErrorText}>{createChildErrors.lastName}</Text>
+              ) : null}
 
-            <Text style={styles.fieldLabel}>תאריך לידה (YYYY-MM-DD, אופציונלי)</Text>
-            <TextInput
-              value={newChildBirthDate}
-              onChangeText={(value) => {
-                setNewChildBirthDate(value);
-                if (createChildErrors.birthDate) {
-                  setCreateChildErrors((prev) => ({ ...prev, birthDate: '' }));
-                }
-              }}
-              style={[styles.input, createChildErrors.birthDate ? styles.inputError : null]}
-              placeholder="2018-05-20"
-              placeholderTextColor="#98A3AD"
-              textAlign="right"
-            />
-            {createChildErrors.birthDate ? (
-              <Text style={styles.fieldErrorText}>{createChildErrors.birthDate}</Text>
-            ) : null}
+              <Text style={styles.fieldLabel}>תאריך לידה (YYYY-MM-DD, אופציונלי)</Text>
+              <TextInput
+                value={newChildBirthDate}
+                onChangeText={(value) => {
+                  setNewChildBirthDate(value);
+                  if (createChildErrors.birthDate) {
+                    setCreateChildErrors((prev) => ({ ...prev, birthDate: '' }));
+                  }
+                }}
+                style={[styles.input, createChildErrors.birthDate ? styles.inputError : null]}
+                placeholder="2018-05-20"
+                placeholderTextColor="#98A3AD"
+                textAlign="right"
+              />
+              {createChildErrors.birthDate ? (
+                <Text style={styles.fieldErrorText}>{createChildErrors.birthDate}</Text>
+              ) : null}
 
-            <Text style={styles.fieldLabel}>תיאור מקצועי עבור המלצת AI</Text>
-            <TextInput
-              value={newChildDescription}
-              onChangeText={(value) => {
-                setNewChildDescription(value);
-                if (createChildErrors.childDescription && value.trim()) {
-                  setCreateChildErrors((prev) => ({ ...prev, childDescription: '' }));
-                }
-              }}
-              style={[styles.input, createChildErrors.childDescription ? styles.inputError : null]}
-              placeholder="לדוגמה: הילד זקוק לחיזוק ביטחון במים, וויסות רגשי ויציבות מוטורית"
-              placeholderTextColor="#98A3AD"
-              textAlign="right"
-            />
-            {createChildErrors.childDescription ? (
-              <Text style={styles.fieldErrorText}>{createChildErrors.childDescription}</Text>
-            ) : null}
+              <Text style={styles.fieldLabel}>תיאור מקצועי עבור המלצת AI</Text>
+              <TextInput
+                value={newChildDescription}
+                onChangeText={(value) => {
+                  setNewChildDescription(value);
+                  if (createChildErrors.childDescription && value.trim()) {
+                    setCreateChildErrors((prev) => ({ ...prev, childDescription: '' }));
+                  }
+                }}
+                style={[styles.input, createChildErrors.childDescription ? styles.inputError : null]}
+                placeholder="לדוגמה: הילד זקוק לחיזוק ביטחון במים, וויסות רגשי ויציבות מוטורית"
+                placeholderTextColor="#98A3AD"
+                textAlign="right"
+              />
+              {createChildErrors.childDescription ? (
+                <Text style={styles.fieldErrorText}>{createChildErrors.childDescription}</Text>
+              ) : null}
 
-            <Text style={styles.fieldLabel}>הורה</Text>
-            <TouchableOpacity
-              style={[
-                styles.dropdownTrigger,
-                !hasParents ? styles.dropdownTriggerDisabled : null,
-                createChildErrors.parentId ? styles.dropdownTriggerError : null,
-              ]}
-              activeOpacity={hasParents ? 0.85 : 1}
-              onPress={() => {
-                if (!hasParents) {
-                  return;
-                }
-
-                setIsCreateChildParentDropdownOpen((prev) => !prev);
-              }}
-              disabled={!hasParents}
-            >
-              <Text style={[styles.dropdownText, !selectedChildParent ? styles.dropdownPlaceholderText : null]}>
-                {selectedChildParent
-                  ? selectedChildParent.displayLabel
-                  : hasParents
-                    ? 'בחרו הורה'
-                    : 'אין הורים זמינים'}
-              </Text>
-              <Text style={styles.dropdownArrow}>{isCreateChildParentDropdownOpen ? '▲' : '▼'}</Text>
-            </TouchableOpacity>
-            {createChildErrors.parentId ? (
-              <Text style={styles.fieldErrorText}>{createChildErrors.parentId}</Text>
-            ) : null}
-
-            {!hasParents ? (
-              <Text style={styles.fieldHintText}>לא ניתן לבחור הורה כי לא קיימים הורים פעילים במערכת.</Text>
-            ) : null}
-
-            {isCreateChildParentDropdownOpen ? (
-              <View style={styles.dropdownPanel}>
-                <ScrollView style={styles.dropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                  {parents.map((parent) => (
+              <Text style={styles.fieldLabel}>חוזקות (בחירה מרובה)</Text>
+              <View style={styles.skillChipsContainer}>
+                {SWIMMING_SKILL_AREAS.map((skill) => {
+                  const isSelected = newChildStrengths.includes(skill.key);
+                  const isDisabledByWeakness = newChildWeaknesses.includes(skill.key);
+                  return (
                     <TouchableOpacity
-                      key={parent.parentId}
+                      key={`str-${skill.key}`}
+                      activeOpacity={0.75}
                       style={[
-                        styles.dropdownOption,
-                        newChildParentId === parent.parentId ? styles.dropdownOptionActive : null,
+                        styles.skillChip,
+                        isSelected ? styles.skillChipStrengthActive : null,
+                        isDisabledByWeakness ? styles.skillChipDisabled : null,
                       ]}
-                      activeOpacity={0.8}
+                      disabled={isDisabledByWeakness}
                       onPress={() => {
-                        setNewChildParentId(parent.parentId);
-                        setIsCreateChildParentDropdownOpen(false);
-                        if (createChildErrors.parentId) {
-                          setCreateChildErrors((prev) => ({ ...prev, parentId: '' }));
-                        }
+                        setNewChildStrengths((prev) =>
+                          prev.includes(skill.key) ? prev.filter((k) => k !== skill.key) : [...prev, skill.key]
+                        );
                       }}
                     >
-                      <Text
-                        style={[
-                          styles.dropdownOptionText,
-                          newChildParentId === parent.parentId ? styles.dropdownOptionTextActive : null,
-                        ]}
-                      >
-                        {parent.displayLabel}
+                      <Text style={[
+                        styles.skillChipText,
+                        isSelected ? styles.skillChipTextActive : null,
+                        isDisabledByWeakness ? styles.skillChipTextDisabled : null,
+                      ]}>
+                        {isSelected ? '✓ ' : ''}{skill.label}
                       </Text>
                     </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                  );
+                })}
               </View>
-            ) : null}
 
-            <View style={styles.modalActionsWrap}>
-              <PrimaryButton
-                label={isSavingChild ? 'שומר...' : hasParents ? 'יצירת ילד' : 'אין הורים זמינים'}
-                style={styles.modalPrimaryButtonShell}
-                gradientStyle={styles.modalPrimaryButton}
-                textStyle={styles.modalPrimaryButtonText}
-                colorsOverride={['#1F8D7A', '#1A7465']}
-                onPress={createChild}
-                disabled={isSavingChild || !hasParents}
-              />
+              <Text style={styles.fieldLabel}>חולשות (בחירה מרובה)</Text>
+              <View style={styles.skillChipsContainer}>
+                {SWIMMING_SKILL_AREAS.map((skill) => {
+                  const isSelected = newChildWeaknesses.includes(skill.key);
+                  const isDisabledByStrength = newChildStrengths.includes(skill.key);
+                  return (
+                    <TouchableOpacity
+                      key={`wk-${skill.key}`}
+                      activeOpacity={0.75}
+                      style={[
+                        styles.skillChip,
+                        isSelected ? styles.skillChipWeaknessActive : null,
+                        isDisabledByStrength ? styles.skillChipDisabled : null,
+                      ]}
+                      disabled={isDisabledByStrength}
+                      onPress={() => {
+                        setNewChildWeaknesses((prev) =>
+                          prev.includes(skill.key) ? prev.filter((k) => k !== skill.key) : [...prev, skill.key]
+                        );
+                      }}
+                    >
+                      <Text style={[
+                        styles.skillChipText,
+                        isSelected ? styles.skillChipTextActive : null,
+                        isDisabledByStrength ? styles.skillChipTextDisabled : null,
+                      ]}>
+                        {isSelected ? '✓ ' : ''}{skill.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
-              <TouchableOpacity style={styles.modalCancelButton} activeOpacity={0.8} onPress={closeCreateChildModal}>
-                <Text style={styles.modalCancelButtonText}>ביטול</Text>
+              <Text style={styles.fieldLabel}>הורה</Text>
+              <TouchableOpacity
+                style={[
+                  styles.dropdownTrigger,
+                  !hasParents ? styles.dropdownTriggerDisabled : null,
+                  createChildErrors.parentId ? styles.dropdownTriggerError : null,
+                ]}
+                activeOpacity={hasParents ? 0.85 : 1}
+                onPress={() => {
+                  if (!hasParents) {
+                    return;
+                  }
+
+                  setIsCreateChildParentDropdownOpen((prev) => !prev);
+                }}
+                disabled={!hasParents}
+              >
+                <Text style={[styles.dropdownText, !selectedChildParent ? styles.dropdownPlaceholderText : null]}>
+                  {selectedChildParent
+                    ? selectedChildParent.displayLabel
+                    : hasParents
+                      ? 'בחרו הורה'
+                      : 'אין הורים זמינים'}
+                </Text>
+                <Text style={styles.dropdownArrow}>{isCreateChildParentDropdownOpen ? '▲' : '▼'}</Text>
               </TouchableOpacity>
-            </View>
+              {createChildErrors.parentId ? (
+                <Text style={styles.fieldErrorText}>{createChildErrors.parentId}</Text>
+              ) : null}
+
+              {!hasParents ? (
+                <Text style={styles.fieldHintText}>לא ניתן לבחור הורה כי לא קיימים הורים פעילים במערכת.</Text>
+              ) : null}
+
+              {isCreateChildParentDropdownOpen ? (
+                <View style={styles.dropdownPanel}>
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                    {parents.map((parent) => (
+                      <TouchableOpacity
+                        key={parent.parentId}
+                        style={[
+                          styles.dropdownOption,
+                          newChildParentId === parent.parentId ? styles.dropdownOptionActive : null,
+                        ]}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          setNewChildParentId(parent.parentId);
+                          setIsCreateChildParentDropdownOpen(false);
+                          if (createChildErrors.parentId) {
+                            setCreateChildErrors((prev) => ({ ...prev, parentId: '' }));
+                          }
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.dropdownOptionText,
+                            newChildParentId === parent.parentId ? styles.dropdownOptionTextActive : null,
+                          ]}
+                        >
+                          {parent.displayLabel}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+
+              <View style={styles.modalActionsWrap}>
+                <PrimaryButton
+                  label={isSavingChild ? 'שומר...' : hasParents ? 'יצירת ילד' : 'אין הורים זמינים'}
+                  style={styles.modalPrimaryButtonShell}
+                  gradientStyle={styles.modalPrimaryButton}
+                  textStyle={styles.modalPrimaryButtonText}
+                  colorsOverride={['#1F8D7A', '#1A7465']}
+                  onPress={createChild}
+                  disabled={isSavingChild || !hasParents}
+                />
+
+                <TouchableOpacity style={styles.modalCancelButton} activeOpacity={0.8} onPress={closeCreateChildModal}>
+                  <Text style={styles.modalCancelButtonText}>ביטול</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2833,7 +3012,8 @@ export default function ManagerHomepage({ navigation, route }) {
       >
         <View style={styles.modalBackdrop} onStartShouldSetResponderCapture={dismissKeyboardOnTouchCapture}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>עריכת מדריך</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} nestedScrollEnabled>
+              <Text style={styles.modalTitle}>עריכת מדריך</Text>
             <Text style={styles.modalSubtitle}>{editInstructorEmail || 'עדכון פרטי מדריך קיים'}</Text>
 
             <Text style={styles.fieldLabel}>שם פרטי</Text>
@@ -2887,6 +3067,7 @@ export default function ManagerHomepage({ navigation, route }) {
                 <Text style={styles.modalCancelButtonText}>ביטול</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2899,7 +3080,8 @@ export default function ManagerHomepage({ navigation, route }) {
       >
         <View style={styles.modalBackdrop} onStartShouldSetResponderCapture={dismissKeyboardOnTouchCapture}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>עריכת הורה</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} nestedScrollEnabled>
+              <Text style={styles.modalTitle}>עריכת הורה</Text>
             <Text style={styles.modalSubtitle}>{editParentEmail || 'עדכון פרטי הורה קיים'}</Text>
 
             <Text style={styles.fieldLabel}>שם פרטי</Text>
@@ -2953,6 +3135,7 @@ export default function ManagerHomepage({ navigation, route }) {
                 <Text style={styles.modalCancelButtonText}>ביטול</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2965,300 +3148,368 @@ export default function ManagerHomepage({ navigation, route }) {
       >
         <View style={styles.modalBackdrop} onStartShouldSetResponderCapture={dismissKeyboardOnTouchCapture}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>עריכת ילד</Text>
-            <Text style={styles.modalSubtitle}>עדכון פרטי ילד קיים</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator nestedScrollEnabled>
+              <Text style={styles.modalTitle}>עריכת ילד</Text>
+              <Text style={styles.modalSubtitle}>עדכון פרטי ילד קיים</Text>
 
-            <Text style={styles.fieldLabel}>שם פרטי</Text>
-            <TextInput
-              value={editChildFirstName}
-              onChangeText={(value) => {
-                setEditChildFirstName(value);
-                if (editChildErrors.firstName && value.trim()) {
-                  setEditChildErrors((prev) => ({ ...prev, firstName: '' }));
-                }
-              }}
-              style={[styles.input, editChildErrors.firstName ? styles.inputError : null]}
-              placeholder="שם פרטי"
-              placeholderTextColor="#98A3AD"
-              textAlign="right"
-            />
-            {editChildErrors.firstName ? (
-              <Text style={styles.fieldErrorText}>{editChildErrors.firstName}</Text>
-            ) : null}
+              <Text style={styles.fieldLabel}>שם פרטי</Text>
+              <TextInput
+                value={editChildFirstName}
+                onChangeText={(value) => {
+                  setEditChildFirstName(value);
+                  if (editChildErrors.firstName && value.trim()) {
+                    setEditChildErrors((prev) => ({ ...prev, firstName: '' }));
+                  }
+                }}
+                style={[styles.input, editChildErrors.firstName ? styles.inputError : null]}
+                placeholder="שם פרטי"
+                placeholderTextColor="#98A3AD"
+                textAlign="right"
+              />
+              {editChildErrors.firstName ? (
+                <Text style={styles.fieldErrorText}>{editChildErrors.firstName}</Text>
+              ) : null}
 
-            <Text style={styles.fieldLabel}>שם משפחה</Text>
-            <TextInput
-              value={editChildLastName}
-              onChangeText={(value) => {
-                setEditChildLastName(value);
-                if (editChildErrors.lastName && value.trim()) {
-                  setEditChildErrors((prev) => ({ ...prev, lastName: '' }));
-                }
-              }}
-              style={[styles.input, editChildErrors.lastName ? styles.inputError : null]}
-              placeholder="שם משפחה"
-              placeholderTextColor="#98A3AD"
-              textAlign="right"
-            />
-            {editChildErrors.lastName ? (
-              <Text style={styles.fieldErrorText}>{editChildErrors.lastName}</Text>
-            ) : null}
+              <Text style={styles.fieldLabel}>שם משפחה</Text>
+              <TextInput
+                value={editChildLastName}
+                onChangeText={(value) => {
+                  setEditChildLastName(value);
+                  if (editChildErrors.lastName && value.trim()) {
+                    setEditChildErrors((prev) => ({ ...prev, lastName: '' }));
+                  }
+                }}
+                style={[styles.input, editChildErrors.lastName ? styles.inputError : null]}
+                placeholder="שם משפחה"
+                placeholderTextColor="#98A3AD"
+                textAlign="right"
+              />
+              {editChildErrors.lastName ? (
+                <Text style={styles.fieldErrorText}>{editChildErrors.lastName}</Text>
+              ) : null}
 
-            <Text style={styles.fieldLabel}>תאריך לידה (YYYY-MM-DD, אופציונלי)</Text>
-            <TextInput
-              value={editChildBirthDate}
-              onChangeText={(value) => {
-                setEditChildBirthDate(value);
-                if (editChildErrors.birthDate) {
-                  setEditChildErrors((prev) => ({ ...prev, birthDate: '' }));
-                }
-              }}
-              style={[styles.input, editChildErrors.birthDate ? styles.inputError : null]}
-              placeholder="2018-05-20"
-              placeholderTextColor="#98A3AD"
-              textAlign="right"
-            />
-            {editChildErrors.birthDate ? (
-              <Text style={styles.fieldErrorText}>{editChildErrors.birthDate}</Text>
-            ) : null}
+              <Text style={styles.fieldLabel}>תאריך לידה (YYYY-MM-DD, אופציונלי)</Text>
+              <TextInput
+                value={editChildBirthDate}
+                onChangeText={(value) => {
+                  setEditChildBirthDate(value);
+                  if (editChildErrors.birthDate) {
+                    setEditChildErrors((prev) => ({ ...prev, birthDate: '' }));
+                  }
+                }}
+                style={[styles.input, editChildErrors.birthDate ? styles.inputError : null]}
+                placeholder="2018-05-20"
+                placeholderTextColor="#98A3AD"
+                textAlign="right"
+              />
+              {editChildErrors.birthDate ? (
+                <Text style={styles.fieldErrorText}>{editChildErrors.birthDate}</Text>
+              ) : null}
 
-            <Text style={styles.fieldLabel}>תיאור מקצועי עבור המלצת AI</Text>
-            <TextInput
-              value={editChildDescription}
-              onChangeText={(value) => {
-                setEditChildDescription(value);
-                if (editChildAiRecommendation) {
-                  setEditChildAiRecommendation(null);
-                }
-              }}
-              style={[styles.input, styles.multilineInput]}
-              placeholder="לדוגמה: הילד זקוק לחיזוק ביטחון במים, וויסות רגשי ויציבות מוטורית"
-              placeholderTextColor="#98A3AD"
-              textAlign="right"
-              multiline
-              textAlignVertical="top"
-            />
+              <Text style={styles.fieldLabel}>תיאור מקצועי עבור המלצת AI</Text>
+              <TextInput
+                value={editChildDescription}
+                onChangeText={(value) => {
+                  setEditChildDescription(value);
+                  if (editChildAiRecommendation) {
+                    setEditChildAiRecommendation(null);
+                  }
+                }}
+                style={[styles.input, styles.multilineInput]}
+                placeholder="לדוגמה: הילד זקוק לחיזוק ביטחון במים, וויסות רגשי ויציבות מוטורית"
+                placeholderTextColor="#98A3AD"
+                textAlign="right"
+                multiline
+                textAlignVertical="top"
+              />
 
-            <Text style={styles.fieldLabel}>הורה</Text>
-            <TouchableOpacity
-              style={[
-                styles.dropdownTrigger,
-                !hasParents ? styles.dropdownTriggerDisabled : null,
-                editChildErrors.parentId ? styles.dropdownTriggerError : null,
-              ]}
-              activeOpacity={hasParents ? 0.85 : 1}
-              onPress={() => {
-                if (!hasParents) {
-                  return;
-                }
-
-                setIsEditChildParentDropdownOpen((prev) => !prev);
-                setIsEditChildGroupDropdownOpen(false);
-              }}
-              disabled={!hasParents}
-            >
-              <Text style={[styles.dropdownText, !selectedEditChildParent ? styles.dropdownPlaceholderText : null]}>
-                {selectedEditChildParent
-                  ? selectedEditChildParent.displayLabel
-                  : hasParents
-                    ? 'בחרו הורה'
-                    : 'אין הורים זמינים'}
-              </Text>
-              <Text style={styles.dropdownArrow}>{isEditChildParentDropdownOpen ? '▲' : '▼'}</Text>
-            </TouchableOpacity>
-            {editChildErrors.parentId ? (
-              <Text style={styles.fieldErrorText}>{editChildErrors.parentId}</Text>
-            ) : null}
-
-            {isEditChildParentDropdownOpen ? (
-              <View style={styles.dropdownPanel}>
-                <ScrollView style={styles.dropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                  {parents.map((parent) => (
+              <Text style={styles.fieldLabel}>חוזקות (בחירה מרובה)</Text>
+              <View style={styles.skillChipsContainer}>
+                {SWIMMING_SKILL_AREAS.map((skill) => {
+                  const isSelected = editChildStrengths.includes(skill.key);
+                  const isDisabledByWeakness = editChildWeaknesses.includes(skill.key);
+                  return (
                     <TouchableOpacity
-                      key={parent.parentId}
+                      key={`edit-str-${skill.key}`}
+                      activeOpacity={0.75}
                       style={[
-                        styles.dropdownOption,
-                        editChildParentId === parent.parentId ? styles.dropdownOptionActive : null,
+                        styles.skillChip,
+                        isSelected ? styles.skillChipStrengthActive : null,
+                        isDisabledByWeakness ? styles.skillChipDisabled : null,
                       ]}
-                      activeOpacity={0.8}
+                      disabled={isDisabledByWeakness}
                       onPress={() => {
-                        setEditChildParentId(parent.parentId);
-                        setIsEditChildParentDropdownOpen(false);
-                        if (editChildErrors.parentId) {
-                          setEditChildErrors((prev) => ({ ...prev, parentId: '' }));
-                        }
+                        setEditChildStrengths((prev) =>
+                          prev.includes(skill.key) ? prev.filter((k) => k !== skill.key) : [...prev, skill.key]
+                        );
                       }}
                     >
-                      <Text
-                        style={[
-                          styles.dropdownOptionText,
-                          editChildParentId === parent.parentId ? styles.dropdownOptionTextActive : null,
-                        ]}
-                      >
-                        {parent.displayLabel}
+                      <Text style={[
+                        styles.skillChipText,
+                        isSelected ? styles.skillChipTextActive : null,
+                        isDisabledByWeakness ? styles.skillChipTextDisabled : null,
+                      ]}>
+                        {isSelected ? '✓ ' : ''}{skill.label}
                       </Text>
                     </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                  );
+                })}
               </View>
-            ) : null}
 
-            <Text style={styles.fieldLabel}>חיפוש קבוצה</Text>
-            <TextInput
-              value={searchEditChildGroupText}
-              onChangeText={setSearchEditChildGroupText}
-              style={[styles.input, styles.searchInput]}
-              placeholder="חיפוש לפי שם קבוצה, תיאור או מדריך"
-              placeholderTextColor="#98A3AD"
-              textAlign="right"
-            />
-
-            <Text style={styles.fieldLabel}>קבוצה</Text>
-            <TouchableOpacity
-              style={styles.dropdownTrigger}
-              activeOpacity={0.85}
-              onPress={() => {
-                setIsEditChildGroupDropdownOpen((prev) => !prev);
-                setIsEditChildParentDropdownOpen(false);
-              }}
-            >
-              <Text style={styles.dropdownText}>
-                {editChildGroupId === null
-                  ? 'לא משוייך לקבוצה כרגע'
-                  : selectedEditChildGroup?.name || `קבוצה ${editChildGroupId}`}
-              </Text>
-              <Text style={styles.dropdownArrow}>{isEditChildGroupDropdownOpen ? '▲' : '▼'}</Text>
-            </TouchableOpacity>
-
-            {isEditChildGroupDropdownOpen ? (
-              <View style={styles.dropdownPanel}>
-                <ScrollView style={styles.dropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                  <TouchableOpacity
-                    style={[
-                      styles.dropdownOption,
-                      editChildGroupId === null ? styles.dropdownOptionActive : null,
-                    ]}
-                    activeOpacity={0.8}
-                    onPress={selectNoGroupForChildEdit}
-                  >
-                    <Text
+              <Text style={styles.fieldLabel}>חולשות (בחירה מרובה)</Text>
+              <View style={styles.skillChipsContainer}>
+                {SWIMMING_SKILL_AREAS.map((skill) => {
+                  const isSelected = editChildWeaknesses.includes(skill.key);
+                  const isDisabledByStrength = editChildStrengths.includes(skill.key);
+                  return (
+                    <TouchableOpacity
+                      key={`edit-wk-${skill.key}`}
+                      activeOpacity={0.75}
                       style={[
-                        styles.dropdownOptionText,
-                        editChildGroupId === null ? styles.dropdownOptionTextActive : null,
+                        styles.skillChip,
+                        isSelected ? styles.skillChipWeaknessActive : null,
+                        isDisabledByStrength ? styles.skillChipDisabled : null,
                       ]}
+                      disabled={isDisabledByStrength}
+                      onPress={() => {
+                        setEditChildWeaknesses((prev) =>
+                          prev.includes(skill.key) ? prev.filter((k) => k !== skill.key) : [...prev, skill.key]
+                        );
+                      }}
                     >
-                      לא משוייך לקבוצה כרגע
-                    </Text>
-                    <Text style={styles.dropdownOptionMeta}>
-                      {originalEditChildGroupId
-                        ? 'הסרת שיוך מהקבוצה הנוכחית'
-                        : 'הילד כבר ללא שיוך לקבוצה'}
-                    </Text>
-                  </TouchableOpacity>
+                      <Text style={[
+                        styles.skillChipText,
+                        isSelected ? styles.skillChipTextActive : null,
+                        isDisabledByStrength ? styles.skillChipTextDisabled : null,
+                      ]}>
+                        {isSelected ? '✓ ' : ''}{skill.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
-                  {filteredGroupsForChildEdit.length === 0 ? (
-                    <Text style={styles.managementEmptyText}>לא נמצאו קבוצות התואמות לחיפוש.</Text>
-                  ) : filteredGroupsForChildEdit.map((group) => {
-                    const isCurrentGroup = Boolean(
-                      originalEditChildGroupId && group.groupId === originalEditChildGroupId
-                    );
+              <Text style={styles.fieldLabel}>הורה</Text>
+              <TouchableOpacity
+                style={[
+                  styles.dropdownTrigger,
+                  !hasParents ? styles.dropdownTriggerDisabled : null,
+                  editChildErrors.parentId ? styles.dropdownTriggerError : null,
+                ]}
+                activeOpacity={hasParents ? 0.85 : 1}
+                onPress={() => {
+                  if (!hasParents) {
+                    return;
+                  }
 
-                    return (
+                  setIsEditChildParentDropdownOpen((prev) => !prev);
+                  setIsEditChildGroupDropdownOpen(false);
+                }}
+                disabled={!hasParents}
+              >
+                <Text style={[styles.dropdownText, !selectedEditChildParent ? styles.dropdownPlaceholderText : null]}>
+                  {selectedEditChildParent
+                    ? selectedEditChildParent.displayLabel
+                    : hasParents
+                      ? 'בחרו הורה'
+                      : 'אין הורים זמינים'}
+                </Text>
+                <Text style={styles.dropdownArrow}>{isEditChildParentDropdownOpen ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+              {editChildErrors.parentId ? (
+                <Text style={styles.fieldErrorText}>{editChildErrors.parentId}</Text>
+              ) : null}
+
+              {isEditChildParentDropdownOpen ? (
+                <View style={styles.dropdownPanel}>
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                    {parents.map((parent) => (
                       <TouchableOpacity
-                        key={group.groupId}
+                        key={parent.parentId}
                         style={[
                           styles.dropdownOption,
-                          editChildGroupId === group.groupId && !isCurrentGroup ? styles.dropdownOptionActive : null,
-                          isCurrentGroup ? styles.dropdownOptionDisabled : null,
+                          editChildParentId === parent.parentId ? styles.dropdownOptionActive : null,
                         ]}
-                        activeOpacity={isCurrentGroup ? 1 : 0.8}
+                        activeOpacity={0.8}
                         onPress={() => {
-                          if (isCurrentGroup) {
-                            return;
+                          setEditChildParentId(parent.parentId);
+                          setIsEditChildParentDropdownOpen(false);
+                          if (editChildErrors.parentId) {
+                            setEditChildErrors((prev) => ({ ...prev, parentId: '' }));
                           }
-
-                          selectGroupForChildEdit(group);
                         }}
                       >
                         <Text
                           style={[
                             styles.dropdownOptionText,
-                            editChildGroupId === group.groupId && !isCurrentGroup ? styles.dropdownOptionTextActive : null,
-                            isCurrentGroup ? styles.dropdownOptionTextDisabled : null,
+                            editChildParentId === parent.parentId ? styles.dropdownOptionTextActive : null,
                           ]}
                         >
-                          {group.name}
-                        </Text>
-                        <Text style={[styles.dropdownOptionMeta, isCurrentGroup ? styles.dropdownOptionMetaDisabled : null]}>
-                          {isCurrentGroup
-                            ? 'הקבוצה הנוכחית של הילד (לא ניתנת לבחירה)'
-                            : group.instructorFullName
-                              ? `מדריך: ${group.instructorFullName}`
-                              : 'קבוצה פעילה'}
+                          {parent.displayLabel}
                         </Text>
                       </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            ) : null}
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
 
-            <Text style={styles.aiSectionTitle}>מציאת קבוצה באמצעות בינה מלאכותית</Text>
-            <Text style={styles.fieldHintText}>המערכת תשווה את תיאור הילד לתיאורי הקבוצות ותסביר את סיבת ההתאמה.</Text>
+              <Text style={styles.fieldLabel}>חיפוש קבוצה</Text>
+              <TextInput
+                value={searchEditChildGroupText}
+                onChangeText={setSearchEditChildGroupText}
+                style={[styles.input, styles.searchInput]}
+                placeholder="חיפוש לפי שם קבוצה, תיאור או מדריך"
+                placeholderTextColor="#98A3AD"
+                textAlign="right"
+              />
 
-            <PrimaryButton
-              label={isFindingAiGroupRecommendation ? 'מחפש התאמה...' : 'מציאת קבוצה באמצעות בינה מלאכותית'}
-              style={styles.modalPrimaryButtonShell}
-              gradientStyle={styles.modalPrimaryButton}
-              textStyle={styles.modalPrimaryButtonText}
-              colorsOverride={['#1F8D7A', '#1A7465']}
-              onPress={findAiGroupRecommendationForChildEdit}
-              disabled={isFindingAiGroupRecommendation || isApplyingAiRecommendedGroup}
-            />
-
-            {editChildAiRecommendation ? (
-              <View style={styles.aiRecommendationCard}>
-                <Text style={styles.aiRecommendationTitle}>
-                  קבוצה מומלצת: {editChildAiRecommendation.recommendedGroupName || `קבוצה ${editChildAiRecommendation.recommendedGroupId}`}
+              <Text style={styles.fieldLabel}>קבוצה</Text>
+              <TouchableOpacity
+                style={styles.dropdownTrigger}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setIsEditChildGroupDropdownOpen((prev) => !prev);
+                  setIsEditChildParentDropdownOpen(false);
+                }}
+              >
+                <Text style={styles.dropdownText}>
+                  {editChildGroupId === null
+                    ? 'לא משוייך לקבוצה כרגע'
+                    : selectedEditChildGroup?.name || `קבוצה ${editChildGroupId}`}
                 </Text>
+                <Text style={styles.dropdownArrow}>{isEditChildGroupDropdownOpen ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
 
-                {editChildAiRecommendation.recommendedInstructorFullName ? (
-                  <Text style={styles.aiRecommendationMeta}>מדריך: {editChildAiRecommendation.recommendedInstructorFullName}</Text>
-                ) : null}
+              {isEditChildGroupDropdownOpen ? (
+                <View style={styles.dropdownPanel}>
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                    <TouchableOpacity
+                      style={[
+                        styles.dropdownOption,
+                        editChildGroupId === null ? styles.dropdownOptionActive : null,
+                      ]}
+                      activeOpacity={0.8}
+                      onPress={selectNoGroupForChildEdit}
+                    >
+                      <Text
+                        style={[
+                          styles.dropdownOptionText,
+                          editChildGroupId === null ? styles.dropdownOptionTextActive : null,
+                        ]}
+                      >
+                        לא משוייך לקבוצה כרגע
+                      </Text>
+                      <Text style={styles.dropdownOptionMeta}>
+                        {originalEditChildGroupId
+                          ? 'הסרת שיוך מהקבוצה הנוכחית'
+                          : 'הילד כבר ללא שיוך לקבוצה'}
+                      </Text>
+                    </TouchableOpacity>
 
-                {editChildAiRecommendation.usedFallback ? (
-                  <Text style={styles.aiRecommendationFallback}>המלצה חלופית: מבוססת אלגוריתם התאמה פנימי.</Text>
-                ) : null}
+                    {filteredGroupsForChildEdit.length === 0 ? (
+                      <Text style={styles.managementEmptyText}>לא נמצאו קבוצות התואמות לחיפוש.</Text>
+                    ) : filteredGroupsForChildEdit.map((group) => {
+                      const isCurrentGroup = Boolean(
+                        originalEditChildGroupId && group.groupId === originalEditChildGroupId
+                      );
 
-                <Text style={styles.aiRecommendationReasoning}>{editChildAiRecommendation.reasoning || 'לא התקבל נימוק מפורט.'}</Text>
+                      return (
+                        <TouchableOpacity
+                          key={group.groupId}
+                          style={[
+                            styles.dropdownOption,
+                            editChildGroupId === group.groupId && !isCurrentGroup ? styles.dropdownOptionActive : null,
+                            isCurrentGroup ? styles.dropdownOptionDisabled : null,
+                          ]}
+                          activeOpacity={isCurrentGroup ? 1 : 0.8}
+                          onPress={() => {
+                            if (isCurrentGroup) {
+                              return;
+                            }
 
-                <PrimaryButton
-                  label={isApplyingAiRecommendedGroup ? 'מוסיף...' : 'הוסף את הילד לקבוצה זו'}
-                  style={styles.aiApplyButtonShell}
-                  gradientStyle={styles.aiApplyButton}
-                  textStyle={styles.aiApplyButtonText}
-                  colorsOverride={['#2E77BC', '#255E97']}
-                  onPress={applyAiRecommendedGroupForChildEdit}
-                  disabled={isApplyingAiRecommendedGroup || isFindingAiGroupRecommendation}
-                />
-              </View>
-            ) : null}
+                            selectGroupForChildEdit(group);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.dropdownOptionText,
+                              editChildGroupId === group.groupId && !isCurrentGroup ? styles.dropdownOptionTextActive : null,
+                              isCurrentGroup ? styles.dropdownOptionTextDisabled : null,
+                            ]}
+                          >
+                            {group.name}
+                          </Text>
+                          <Text style={[styles.dropdownOptionMeta, isCurrentGroup ? styles.dropdownOptionMetaDisabled : null]}>
+                            {isCurrentGroup
+                              ? 'הקבוצה הנוכחית של הילד (לא ניתנת לבחירה)'
+                              : group.instructorFullName
+                                ? `מדריך: ${group.instructorFullName}`
+                                : 'קבוצה פעילה'}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              ) : null}
 
-            <View style={styles.modalActionsWrap}>
+              <Text style={styles.aiSectionTitle}>מציאת קבוצה באמצעות בינה מלאכותית</Text>
+              <Text style={styles.fieldHintText}>המערכת תשווה את תיאור הילד לתיאורי הקבוצות ותסביר את סיבת ההתאמה.</Text>
+
               <PrimaryButton
-                label={isUpdatingChild ? 'שומר...' : 'שמירת שינויים'}
+                label={isFindingAiGroupRecommendation ? 'מחפש התאמה...' : 'התאמת קבוצה בעזרת AI'}
                 style={styles.modalPrimaryButtonShell}
                 gradientStyle={styles.modalPrimaryButton}
                 textStyle={styles.modalPrimaryButtonText}
-                colorsOverride={['#2E77BC', '#255E97']}
-                onPress={updateChild}
-                disabled={isUpdatingChild}
+                colorsOverride={['#1F8D7A', '#1A7465']}
+                onPress={findAiGroupRecommendationForChildEdit}
+                disabled={isFindingAiGroupRecommendation || isApplyingAiRecommendedGroup}
               />
 
-              <TouchableOpacity style={styles.modalCancelButton} activeOpacity={0.8} onPress={closeEditChildModal}>
-                <Text style={styles.modalCancelButtonText}>ביטול</Text>
-              </TouchableOpacity>
-            </View>
+              {editChildAiRecommendation ? (
+                <View style={styles.aiRecommendationCard}>
+                  <Text style={styles.aiRecommendationTitle}>
+                    קבוצה מומלצת: {editChildAiRecommendation.recommendedGroupName || `קבוצה ${editChildAiRecommendation.recommendedGroupId}`}
+                  </Text>
+
+                  {editChildAiRecommendation.recommendedInstructorFullName ? (
+                    <Text style={styles.aiRecommendationMeta}>מדריך: {editChildAiRecommendation.recommendedInstructorFullName}</Text>
+                  ) : null}
+
+                  {editChildAiRecommendation.usedFallback ? (
+                    <Text style={styles.aiRecommendationFallback}>המלצה חלופית: מבוססת אלגוריתם התאמה פנימי.</Text>
+                  ) : null}
+
+                  <Text style={styles.aiRecommendationReasoning}>{editChildAiRecommendation.reasoning || 'לא התקבל נימוק מפורט.'}</Text>
+
+                  <PrimaryButton
+                    label={isApplyingAiRecommendedGroup ? 'מוסיף...' : 'הוסף את הילד לקבוצה זו'}
+                    style={styles.aiApplyButtonShell}
+                    gradientStyle={styles.aiApplyButton}
+                    textStyle={styles.aiApplyButtonText}
+                    colorsOverride={['#2E77BC', '#255E97']}
+                    onPress={applyAiRecommendedGroupForChildEdit}
+                    disabled={isApplyingAiRecommendedGroup || isFindingAiGroupRecommendation}
+                  />
+                </View>
+              ) : null}
+
+              <View style={styles.modalActionsWrap}>
+                <PrimaryButton
+                  label={isUpdatingChild ? 'שומר...' : 'שמירת שינויים'}
+                  style={styles.modalPrimaryButtonShell}
+                  gradientStyle={styles.modalPrimaryButton}
+                  textStyle={styles.modalPrimaryButtonText}
+                  colorsOverride={['#2E77BC', '#255E97']}
+                  onPress={updateChild}
+                  disabled={isUpdatingChild}
+                />
+
+                <TouchableOpacity style={styles.modalCancelButton} activeOpacity={0.8} onPress={closeEditChildModal}>
+                  <Text style={styles.modalCancelButtonText}>ביטול</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -3271,7 +3522,8 @@ export default function ManagerHomepage({ navigation, route }) {
       >
         <View style={styles.modalBackdrop} onStartShouldSetResponderCapture={dismissKeyboardOnTouchCapture}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>עריכת קבוצה</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} nestedScrollEnabled>
+              <Text style={styles.modalTitle}>עריכת קבוצה</Text>
             <Text style={styles.modalSubtitle}>עדכון שם קבוצה, מדריך ותיאור. כל השדות חובה.</Text>
 
             <Text style={styles.fieldLabel}>שם הקבוצה</Text>
@@ -3407,9 +3659,10 @@ export default function ManagerHomepage({ navigation, route }) {
                 <Text style={styles.modalCancelButtonText}>ביטול</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }

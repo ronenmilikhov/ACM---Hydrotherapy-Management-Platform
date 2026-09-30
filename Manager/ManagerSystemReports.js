@@ -101,12 +101,12 @@ export default function ManagerSystemReports({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
       <LoginAquaticBackground />
       <RoleHeader
         title={'סטטיסטיקות ומדדים'}
-        leftIcon="←"
+        leftIcon="›"
         onLeftPress={goToManagerHomepage}
         showRightButton={false}
         theme="dark"
@@ -161,7 +161,7 @@ export default function ManagerSystemReports({ navigation, route }) {
                         <View style={styles.metricInfo}>
                           <Text style={styles.metricLabel} numberOfLines={1}>{metric.label}</Text>
                           <Text style={styles.metricValue}>
-                            {Number.isFinite(metric.value) ? `${metric.value}/10` : 'אין נתון'}
+                            {Number.isFinite(metric.value) ? `${metric.value}/5` : 'אין נתון'}
                           </Text>
                         </View>
                       </View>
@@ -192,6 +192,6 @@ export default function ManagerSystemReports({ navigation, route }) {
           </Animated.View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

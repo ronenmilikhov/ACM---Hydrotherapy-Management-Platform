@@ -1,7 +1,8 @@
-import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   Alert, StyleSheet, Text, View, Animated, Dimensions, TouchableOpacity,
-  TextInput, StatusBar, Easing, Platform, ScrollView, Modal,
+  TextInput, StatusBar, Easing, Platform, ScrollView, Modal, I18nManager,
+  Keyboard, TouchableWithoutFeedback, KeyboardAvoidingView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -55,137 +56,104 @@ const Wave = ({ color, duration, startPosition, d }) => {
   );
 };
 
-// ========================================
-// 2. TRULY INFINITE REINCARNATING BUBBLES
-// ========================================
-const Bubble = () => {
-  const progress = useRef(new Animated.Value(0)).current;
-  const sway = useRef(new Animated.Value(0)).current;
-  const [config, setConfig] = useState({
-    size: Math.random() * 30 + 10,
-    left: Math.random() * width,
-  });
-
-  const durationRef = useRef(Math.random() * 16000 + 14000);
-  const isFirstRun = useRef(true);
-
-  const startFloat = () => {
-    progress.setValue(0);
-    const delay = isFirstRun.current ? Math.random() * 30000 : 0;
-    isFirstRun.current = false;
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: durationRef.current,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        durationRef.current = Math.random() * 16000 + 14000;
-        setConfig({
-          size: Math.random() * 30 + 10,
-          left: Math.random() * width,
-        });
-        startFloat();
-      }
-    });
-  };
-
-  useEffect(() => {
-    startFloat();
-    const swayAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(sway, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: -1, duration: 4000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    );
-    swayAnim.start();
-    return () => { progress.stopAnimation(); sway.stopAnimation(); };
-  }, []);
-
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height + 50, -150] });
-  const opacity = progress.interpolate({ inputRange: [0, 0.1, 0.8, 1], outputRange: [0, 1, 1, 0] });
-  const translateX = sway.interpolate({ inputRange: [-1, 1], outputRange: [-20, 20] });
-
-  return (
-    <Animated.View
-      style={[
-        styles.bubbleWrapper,
-        {
-          width: config.size,
-          height: config.size,
-          borderRadius: config.size / 2,
-          left: config.left,
-          transform: [{ translateY }, { translateX }],
-          opacity,
-        },
-      ]}
-    >
-      <LinearGradient
-        colors={["rgba(255, 255, 255, 0.95)", "rgba(255, 255, 255, 0.1)"]}
-        style={{
-          flex: 1,
-          borderRadius: config.size / 2,
-          borderWidth: 1,
-          borderColor: "rgba(255, 255, 255, 0.4)",
-        }}
-      />
-    </Animated.View>
-  );
-};
 
 // ========================================
 // 3. SUB-COMPONENTS
 // ========================================
-const GroupRow = ({ title, time, onCancel, onStartChat, canStartChat, canCancel, isCancelling }) => (
-  <AppCard useBlur blurIntensity={20} blurTint="dark" style={styles.groupRow}>
-    <View style={styles.groupRowActions}>
-      <TouchableOpacity
-        style={[
-          styles.chatButton,
-          !canStartChat && styles.chatButtonDisabled,
-        ]}
-        activeOpacity={0.8}
-        onPress={onStartChat}
-        disabled={!canStartChat}
-      >
-        <Text
-          style={[
-            styles.chatButtonText,
-            !canStartChat && styles.chatButtonTextDisabled,
-          ]}
-        >
-          צ׳אט
-        </Text>
-      </TouchableOpacity>
+const GroupRow = ({
+  title,
+  time,
+  targetMetric,
+  onCancel,
+  onStartChat,
+  canStartChat,
+  canCancel,
+  isCancelling,
+  isGroupSession,
+  onBroadcast,
+  isExpanded,
+  onToggleExpand,
+  groupChildren,
+  isLoadingChildren,
+}) => (
+  <AppCard useBlur blurIntensity={20} blurTint="dark" style={[styles.groupRow, { flexDirection: 'column', alignItems: 'stretch' }]}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+      <View style={styles.groupTextWrap}>
+        <Text style={styles.groupTitle}>{title}</Text>
+        <Text style={styles.groupSubtitle}>{time}</Text>
+        {!!targetMetric && <Text style={styles.metricText}>מדד מטרה: {targetMetric}</Text>}
+      </View>
 
-      <TouchableOpacity
-        style={[
-          styles.cancelButton,
-          (!canCancel || isCancelling) && styles.cancelButtonDisabled,
-        ]}
-        activeOpacity={0.8}
-        onPress={onCancel}
-        disabled={!canCancel || isCancelling}
-      >
-        <Text
+      <View style={styles.groupRowActions}>
+        <TouchableOpacity
           style={[
-            styles.cancelButtonText,
-            (!canCancel || isCancelling) && styles.cancelButtonTextDisabled,
+            styles.chatButton,
+            !canStartChat && !isGroupSession && styles.chatButtonDisabled,
           ]}
+          activeOpacity={0.8}
+          onPress={isGroupSession ? onBroadcast : onStartChat}
+          disabled={!canStartChat && !isGroupSession}
         >
-          {isCancelling ? 'מבטל...' : 'ביטול'}
-        </Text>
-      </TouchableOpacity>
+          <Text
+            style={[
+              styles.chatButtonText,
+              !canStartChat && !isGroupSession && styles.chatButtonTextDisabled,
+            ]}
+          >
+            {isGroupSession ? 'שדר הודעה' : 'צ׳אט'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.cancelButton,
+            (!canCancel || isCancelling) && styles.cancelButtonDisabled,
+          ]}
+          activeOpacity={0.8}
+          onPress={onCancel}
+          disabled={!canCancel || isCancelling}
+        >
+          <Text
+            style={[
+              styles.cancelButtonText,
+              (!canCancel || isCancelling) && styles.cancelButtonTextDisabled,
+            ]}
+          >
+            {isCancelling ? 'מבטל...' : 'ביטול'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
 
-    <View style={styles.groupTextWrap}>
-      <Text style={styles.groupTitle}>{title}</Text>
-      <Text style={styles.groupSubtitle}>{time}</Text>
-    </View>
+    {isGroupSession && (
+      <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 10 }}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={styles.toggleChildrenBtn}
+          onPress={onToggleExpand}
+        >
+          <Text style={styles.toggleChildrenBtnText}>
+            {isExpanded ? 'הסתר רשימת ילדים והורים ▲' : 'הצג רשימת ילדים והורים ▼'}
+          </Text>
+        </TouchableOpacity>
+
+        {isExpanded && (
+          <View style={styles.expandedChildrenContainer}>
+            {isLoadingChildren ? (
+              <Text style={styles.loadingChildrenText}>טוען ילדים והורים...</Text>
+            ) : !groupChildren || groupChildren.length === 0 ? (
+              <Text style={styles.loadingChildrenText}>אין ילדים רשומים בקבוצה זו.</Text>
+            ) : (
+              groupChildren.map((child, idx) => (
+                <Text key={idx} style={styles.childRowText}>
+                  {child.name} (הורה: {child.parentName}) •
+                </Text>
+              ))
+            )}
+          </View>
+        )}
+      </View>
+    )}
   </AppCard>
 );
 
@@ -218,12 +186,54 @@ export default function InstructorHomepage({ route }) {
   const instructorId = Number(authUser?.id || 0);
   const instructorDisplayName = String(
     authUser?.fullName
-      || `${authUser?.firstName || ''} ${authUser?.lastName || ''}`,
+    || `${authUser?.firstName || ''} ${authUser?.lastName || ''}`,
   ).trim() || 'מדריך';
   const scrollY = useRef(new Animated.Value(0)).current;
   const [classGroups, setClassGroups] = useState([]);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [expandedGroupChildren, setExpandedGroupChildren] = useState({});
+  const [loadingGroupChildren, setLoadingGroupChildren] = useState({});
+  const [expandedGroupId, setExpandedGroupId] = useState(null);
+
+  const toggleGroupChildren = useCallback(async (groupId) => {
+    if (!groupId) return;
+    if (expandedGroupId === groupId) {
+      setExpandedGroupId(null);
+      return;
+    }
+
+    setExpandedGroupId(groupId);
+
+    if (expandedGroupChildren[groupId]) {
+      return;
+    }
+
+    try {
+      setLoadingGroupChildren(prev => ({ ...prev, [groupId]: true }));
+      const response = await fetch(`${API_BASE_URL}/instructor/${instructorId}/groups/${groupId}/children`);
+      const payload = await response.json().catch(() => null);
+      if (response.ok) {
+        const childrenPayload = Array.isArray(payload?.children) ? payload.children : Array.isArray(payload) ? payload : [];
+        const normalized = childrenPayload.map(child => {
+          const firstName = String(child?.firstName || '').trim();
+          const lastName = String(child?.lastName || '').trim();
+          const fullName = String(child?.fullName || `${firstName} ${lastName}`).trim();
+          const parentFullName = String(child?.parentFullName || '').trim();
+          return {
+            name: fullName || 'ילד לא ידוע',
+            parentName: parentFullName || 'לא ידוע'
+          };
+        });
+        setExpandedGroupChildren(prev => ({ ...prev, [groupId]: normalized }));
+      }
+    } catch (e) {
+      console.warn('Failed to load children for group', groupId, e);
+    } finally {
+      setLoadingGroupChildren(prev => ({ ...prev, [groupId]: false }));
+    }
+  }, [instructorId, expandedGroupId, expandedGroupChildren]);
+
   const [isLoadingClassGroups, setIsLoadingClassGroups] = useState(false);
   const [classGroupsError, setClassGroupsError] = useState('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
@@ -235,8 +245,9 @@ export default function InstructorHomepage({ route }) {
   const [newParticipants, setNewParticipants] = useState('5');
   const [cancelingSessionId, setCancelingSessionId] = useState(null);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
-
-  const bubblePool = useMemo(() => Array.from({ length: 6 }).map((_, i) => i), []);
+  const [selectedGroupIds, setSelectedGroupIds] = useState([]);
+  const [instructorGroups, setInstructorGroups] = useState([]);
+  const [recipientCount, setRecipientCount] = useState(0);
 
   const surfaceOpacity = scrollY.interpolate({
     inputRange: [0, height * 0.8],
@@ -390,6 +401,8 @@ export default function InstructorHomepage({ route }) {
             weekdayOrder: Number(session?.weekdayOrder || 0),
             meetingDate: String(session?.meetingDate || ''),
             startTime,
+            targetMetric: String(session?.targetMetric || '').trim(),
+            groupId: session?.groupId ? Number(session.groupId) : null,
           };
         })
         .sort((a, b) => {
@@ -473,8 +486,25 @@ export default function InstructorHomepage({ route }) {
     );
   }, [cancelTrainingSession, cancelingSessionId]);
 
-  const getBroadcastRecipientParentCount = useCallback(async () => {
-    const response = await fetch(`${API_BASE_URL}/lesson-scheduling/instructor/${instructorId}/recipients`);
+  const loadInstructorGroups = useCallback(async () => {
+    if (!instructorId) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/instructor/${instructorId}/groups`);
+      const payload = await response.json().catch(() => null);
+      if (response.ok && Array.isArray(payload)) {
+        setInstructorGroups(payload);
+      }
+    } catch (e) {
+      console.warn('Failed to load instructor groups', e);
+    }
+  }, [instructorId]);
+
+  const getBroadcastRecipientParentCount = useCallback(async (groupIds) => {
+    let url = `${API_BASE_URL}/lesson-scheduling/instructor/${instructorId}/recipients`;
+    if (groupIds && groupIds.length > 0) {
+      url += `?groupIds=${groupIds.join(',')}`;
+    }
+    const response = await fetch(url);
     const payload = await response.json().catch(() => null);
 
     if (!response.ok) {
@@ -499,9 +529,13 @@ export default function InstructorHomepage({ route }) {
 
     try {
       setIsCheckingBroadcastRecipients(true);
+      setSelectedGroupIds([]);
+      await loadInstructorGroups();
 
-      const parentRecipientsCount = await getBroadcastRecipientParentCount();
-      if (parentRecipientsCount <= 0) {
+      const count = await getBroadcastRecipientParentCount([]);
+      setRecipientCount(count);
+
+      if (count <= 0) {
         Alert.alert('לא ניתן לשדר הודעה', 'לא נמצאו הורים פעילים בקבוצות המשויכות אליך כרגע.');
         return;
       }
@@ -512,7 +546,61 @@ export default function InstructorHomepage({ route }) {
     } finally {
       setIsCheckingBroadcastRecipients(false);
     }
-  }, [getBroadcastRecipientParentCount, instructorId]);
+  }, [getBroadcastRecipientParentCount, loadInstructorGroups, instructorId]);
+
+  const openBroadcastForGroup = useCallback(async (groupId) => {
+    if (!instructorId) {
+      Alert.alert('שגיאה', 'לא זוהה מדריך מחובר. התחברו מחדש.');
+      return;
+    }
+
+    try {
+      setIsCheckingBroadcastRecipients(true);
+      await loadInstructorGroups();
+
+      const finalGroupId = Number(groupId || 0);
+      const groupSelection = finalGroupId > 0 ? [finalGroupId] : [];
+      setSelectedGroupIds(groupSelection);
+
+      const count = await getBroadcastRecipientParentCount(groupSelection);
+      setRecipientCount(count);
+
+      if (count <= 0) {
+        Alert.alert('לא ניתן לשדר הודעה', 'לא נמצאו הורים פעילים בקבוצה זו כרגע.');
+        return;
+      }
+
+      setShowBroadcastModal(true);
+    } catch (error) {
+      Alert.alert('שגיאה', String(error?.message || 'לא ניתן לבדוק הורים פעילים כרגע.'));
+    } finally {
+      setIsCheckingBroadcastRecipients(false);
+    }
+  }, [getBroadcastRecipientParentCount, loadInstructorGroups, instructorId]);
+
+  const handleGroupSelect = async (groupId) => {
+    let newSelection;
+    if (groupId === null) {
+      newSelection = [];
+    } else {
+      if (selectedGroupIds.includes(groupId)) {
+        newSelection = selectedGroupIds.filter(id => id !== groupId);
+      } else {
+        newSelection = [...selectedGroupIds, groupId];
+      }
+    }
+    setSelectedGroupIds(newSelection);
+
+    try {
+      setIsCheckingBroadcastRecipients(true);
+      const count = await getBroadcastRecipientParentCount(newSelection);
+      setRecipientCount(count);
+    } catch (error) {
+      Alert.alert('שגיאה', 'שגיאה בחישוב מספר הנמענים.');
+    } finally {
+      setIsCheckingBroadcastRecipients(false);
+    }
+  };
 
   const sendBroadcastToAssignedParents = useCallback(async () => {
     const message = String(broadcastMessage || '').trim();
@@ -527,11 +615,8 @@ export default function InstructorHomepage({ route }) {
     }
 
     try {
-      const parentRecipientsCount = await getBroadcastRecipientParentCount();
-      if (parentRecipientsCount <= 0) {
-        Alert.alert('לא ניתן לשלוח שידור', 'לא נמצאו הורים פעילים בקבוצות המשויכות אליך כרגע.');
-        setShowBroadcastModal(false);
-        setBroadcastMessage('');
+      if (recipientCount <= 0) {
+        Alert.alert('לא ניתן לשלוח שידור', 'לא נמצאו הורים פעילים לקבוצות שנבחרו.');
         return;
       }
 
@@ -543,6 +628,7 @@ export default function InstructorHomepage({ route }) {
         body: JSON.stringify({
           message,
           instructorName: instructorDisplayName,
+          groupIds: selectedGroupIds
         }),
       });
 
@@ -553,13 +639,13 @@ export default function InstructorHomepage({ route }) {
 
       const sentCount = Number(payload?.sentCount || 0);
       if (sentCount <= 0) {
-        Alert.alert('לא ניתן לשלוח שידור', 'לא נמצאו הורים פעילים בקבוצות המשויכות אליך כרגע.');
+        Alert.alert('לא ניתן לשלוח שידור', 'לא נמצאו הורים פעילים לקבוצות שנבחרו.');
         setShowBroadcastModal(false);
         setBroadcastMessage('');
         return;
       }
 
-      Alert.alert('השידור נשלח', `ההודעה נשלחה ל-${sentCount} הורים של הקבוצות שלך.`);
+      Alert.alert('השידור נשלח', `ההודעה נשלחה ל-${sentCount} הורים.`);
 
       setBroadcastMessage('');
       setShowBroadcastModal(false);
@@ -568,7 +654,7 @@ export default function InstructorHomepage({ route }) {
     } finally {
       setIsSendingBroadcast(false);
     }
-  }, [broadcastMessage, getBroadcastRecipientParentCount, instructorDisplayName, instructorId]);
+  }, [broadcastMessage, recipientCount, selectedGroupIds, instructorDisplayName, instructorId]);
 
   const performDisconnect = useCallback(async () => {
     if (instructorId) {
@@ -625,11 +711,8 @@ export default function InstructorHomepage({ route }) {
 
       {/* Surface Water */}
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: surfaceOpacity }]}>
-        <LinearGradient colors={['#00aed8', '#007fa7', '#004d73']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={['#00aed8', '#007fa7', '#004d73']} style={{ flex: 1 }} />
       </Animated.View>
-
-      {/* Bubbles */}
-      {bubblePool.map((id) => <Bubble key={id} />)}
 
       {/* Bottom Waves */}
       <Wave
@@ -647,10 +730,6 @@ export default function InstructorHomepage({ route }) {
 
       {/* NAVBAR */}
       <AnimatedBlurView intensity={20} tint="dark" style={[styles.navbar, { backgroundColor: navBg }]}>
-        <TouchableOpacity onPress={handleDisconnect} style={styles.disconnectBtn} activeOpacity={0.8}>
-          <Text style={styles.disconnectBtnText}>התנתקות</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={styles.navBellWrap}
           activeOpacity={0.7}
@@ -670,6 +749,24 @@ export default function InstructorHomepage({ route }) {
             </View>
           </View>
         </TouchableOpacity>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('ChatPage', {
+              fromInstructor: true,
+              isAiChat: true,
+              instructorId,
+              instructorName: instructorDisplayName,
+            })}
+            style={[styles.disconnectBtn, { backgroundColor: 'rgba(0, 212, 255, 0.2)', borderColor: 'rgba(0, 212, 255, 0.45)' }]}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.disconnectBtnText, { color: '#00d4ff' }]}>💬 צ'אט עוזר AI חכם</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleDisconnect} style={styles.disconnectBtn} activeOpacity={0.8}>
+            <Text style={styles.disconnectBtnText}>התנתקות</Text>
+          </TouchableOpacity>
+        </View>
       </AnimatedBlurView>
 
       {/* MAIN SCROLL CONTENT */}
@@ -702,23 +799,41 @@ export default function InstructorHomepage({ route }) {
           ) : classGroups.length === 0 ? (
             <Text style={styles.listStateText}>אין שיעורים שנקבעו לשבוע הקרוב.</Text>
           ) : (
-            classGroups.map((group) => (
-              <GroupRow
-                key={String(group.id || `${group.name}-${group.time}`)}
-                title={group.name}
-                time={group.time}
-                onCancel={() => requestTrainingCancellation(group)}
-                onStartChat={() => openSessionChat(group)}
-                canStartChat={group.parentId > 0 && group.childId > 0}
-                canCancel={group.id !== 0}
-                isCancelling={cancelingSessionId === group.id}
-              />
-            ))
+            classGroups.map((group) => {
+              const isGroup = !(group.parentId > 0 && group.childId > 0);
+              const keyType = isGroup ? 'group' : 'private';
+              return (
+                <GroupRow
+                  key={`${keyType}-${group.id}`}
+                  title={group.name}
+                  time={group.time}
+                  targetMetric={group.targetMetric}
+                  onCancel={() => requestTrainingCancellation(group)}
+                  onStartChat={() => openSessionChat(group)}
+                  canStartChat={group.parentId > 0 && group.childId > 0}
+                  canCancel={group.id !== 0}
+                  isCancelling={cancelingSessionId === group.id}
+                  isGroupSession={isGroup}
+                  onBroadcast={() => openBroadcastForGroup(group.groupId)}
+                  isExpanded={expandedGroupId === group.groupId}
+                  onToggleExpand={() => toggleGroupChildren(group.groupId)}
+                  groupChildren={expandedGroupChildren[group.groupId]}
+                  isLoadingChildren={loadingGroupChildren[group.groupId]}
+                />
+              );
+            })
           )}
         </View>
 
         {/* ACTIONS */}
         <View style={styles.section}>
+          <PrimaryButton
+            label="✨ דיווחי AI לקבוצות"
+            style={[styles.actionBtn, { borderColor: 'rgba(0, 212, 255, 0.65)', borderWidth: 1.5 }]}
+            gradientStyle={styles.btnGradient}
+            textStyle={[styles.actionBtnText, { color: '#00d4ff', fontWeight: '800' }]}
+            onPress={() => navigation.navigate('InstructorAIGroupReports', { authUser })}
+          />
           <PrimaryButton
             label="תיבת צ׳אטים"
             style={styles.actionBtn}
@@ -770,105 +885,168 @@ export default function InstructorHomepage({ route }) {
 
       {/* CREATE GROUP MODAL */}
       <Modal visible={showCreateGroupModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <AppCard useBlur blurIntensity={40} blurTint="dark" style={styles.modalCard}>
-            <Text style={styles.modalTitle}>יצירת קבוצה חדשה</Text>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+              style={{ width: '100%', alignItems: 'center' }}
+            >
+              <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+                <AppCard useBlur blurIntensity={40} blurTint="dark" style={styles.modalCard}>
+                  <Text style={styles.modalTitle}>יצירת קבוצה חדשה</Text>
 
-            <Text style={styles.modalLabel}>שם קבוצה</Text>
-            <TextInput
-              value={newGroupName}
-              onChangeText={setNewGroupName}
-              style={styles.modalInput}
-              placeholderTextColor="rgba(255,255,255,0.4)"
-            />
+                  <Text style={styles.modalLabel}>שם קבוצה</Text>
+                  <TextInput
+                    value={newGroupName}
+                    onChangeText={setNewGroupName}
+                    style={styles.modalInput}
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                  />
 
-            <Text style={styles.modalLabel}>זמן שיעור</Text>
-            <TextInput
-              value={newLessonTime}
-              onChangeText={setNewLessonTime}
-              placeholder="12:00 - 12:30"
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              style={styles.modalInput}
-            />
+                  <Text style={styles.modalLabel}>זמן שיעור</Text>
+                  <TextInput
+                    value={newLessonTime}
+                    onChangeText={setNewLessonTime}
+                    placeholder="12:00 - 12:30"
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                    style={styles.modalInput}
+                  />
 
-            <Text style={styles.modalLabel}>גיל</Text>
-            <TextInput
-              value={newAge}
-              onChangeText={(v) => setNewAge(v.replace(/[^0-9]/g, ''))}
-              keyboardType="numeric"
-              style={styles.modalInput}
-              placeholderTextColor="rgba(255,255,255,0.4)"
-            />
+                  <Text style={styles.modalLabel}>גיל</Text>
+                  <TextInput
+                    value={newAge}
+                    onChangeText={(v) => setNewAge(v.replace(/[^0-9]/g, ''))}
+                    keyboardType="numeric"
+                    style={styles.modalInput}
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                  />
 
-            <Text style={styles.modalLabel}>מספר משתתפים</Text>
-            <View style={styles.participantsRow}>
-              {['5','6','7','8','9','10','11','12'].map((n) => (
-                <TouchableOpacity
-                  key={n}
-                  onPress={() => setNewParticipants(n)}
-                  style={[
-                    styles.participantChip,
-                    newParticipants === n && styles.participantChipActive,
-                  ]}
-                >
-                  <Text style={[
-                    styles.participantText,
-                    newParticipants === n && styles.participantTextActive,
-                  ]}>{n}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                  <Text style={styles.modalLabel}>מספר משתתפים</Text>
+                  <View style={styles.participantsRow}>
+                    {['5', '6', '7', '8', '9', '10', '11', '12'].map((n) => (
+                      <TouchableOpacity
+                        key={n}
+                        onPress={() => setNewParticipants(n)}
+                        style={[
+                          styles.participantChip,
+                          newParticipants === n && styles.participantChipActive,
+                        ]}
+                      >
+                        <Text style={[
+                          styles.participantText,
+                          newParticipants === n && styles.participantTextActive,
+                        ]}>{n}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                onPress={() => setShowCreateGroupModal(false)}
-                style={styles.modalCancelBtn}
-              >
-                <Text style={styles.modalCancelText}>ביטול</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={createGroup} style={styles.modalSaveBtn}>
-                <LinearGradient colors={['#00d4ff', '#0099cc']} style={styles.modalSaveBtnGradient}>
-                  <Text style={styles.modalSaveText}>שמור</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </AppCard>
-        </View>
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity
+                      onPress={() => setShowCreateGroupModal(false)}
+                      style={styles.modalCancelBtn}
+                    >
+                      <Text style={styles.modalCancelText}>ביטול</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={createGroup} style={styles.modalSaveBtn}>
+                      <LinearGradient colors={['#00d4ff', '#0099cc']} style={styles.modalSaveBtnGradient}>
+                        <Text style={styles.modalSaveText}>שמור</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                </AppCard>
+              </TouchableWithoutFeedback>
+            </KeyboardAvoidingView>
+          </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* BROADCAST MODAL */}
       <Modal visible={showBroadcastModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <AppCard useBlur blurIntensity={40} blurTint="dark" style={styles.modalCard}>
-            <Text style={styles.modalTitle}>שידור הודעה לכל הקבוצות</Text>
-            <TextInput
-              value={broadcastMessage}
-              onChangeText={setBroadcastMessage}
-              placeholder="הקלד הודעה..."
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              multiline
-              style={[styles.modalInput, { minHeight: 100, textAlignVertical: 'top' }]}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                onPress={() => setShowBroadcastModal(false)}
-                style={[styles.modalCancelBtn, isSendingBroadcast && styles.modalButtonDisabled]}
-                disabled={isSendingBroadcast}
-              >
-                <Text style={styles.modalCancelText}>ביטול</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={sendBroadcastToAssignedParents}
-                style={[styles.modalSaveBtn, isSendingBroadcast && styles.modalButtonDisabled]}
-                disabled={isSendingBroadcast}
-              >
-                <LinearGradient colors={['#00d4ff', '#0099cc']} style={styles.modalSaveBtnGradient}>
-                  <Text style={styles.modalSaveText}>{isSendingBroadcast ? 'שולח...' : 'שלח'}</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </AppCard>
-        </View>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+              style={{ width: '100%', alignItems: 'center' }}
+            >
+              <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+                <AppCard useBlur blurIntensity={40} blurTint="dark" style={[styles.modalCard, { width: width * 0.9, maxWidth: 400 }]}>
+                  <Text style={styles.modalTitle}>שידור הודעה להורים</Text>
+
+                  <Text style={styles.groupSelectLabel}>בחר קבוצות יעד (ניתן לבחור מספר קבוצות):</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.groupChipsContainer}
+                    style={{ maxHeight: 50, marginBottom: 12 }}
+                  >
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => handleGroupSelect(null)}
+                      style={[
+                        styles.groupChip,
+                        selectedGroupIds.length === 0 && styles.groupChipActive
+                      ]}
+                    >
+                      <Text style={[
+                        styles.groupChipText,
+                        selectedGroupIds.length === 0 && styles.groupChipTextActive
+                      ]}>כל הקבוצות</Text>
+                    </TouchableOpacity>
+                    {instructorGroups.map((g) => (
+                      <TouchableOpacity
+                        key={`broadcast-g-${g.groupId}`}
+                        activeOpacity={0.8}
+                        onPress={() => handleGroupSelect(g.groupId)}
+                        style={[
+                          styles.groupChip,
+                          selectedGroupIds.includes(g.groupId) && styles.groupChipActive
+                        ]}
+                      >
+                        <Text style={[
+                          styles.groupChipText,
+                          selectedGroupIds.includes(g.groupId) && styles.groupChipTextActive
+                        ]}>{g.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+
+                  <Text style={styles.recipientCountText}>
+                    {isCheckingBroadcastRecipients ? 'מחשב נמענים...' : `ההודעה תישלח ל-${recipientCount} הורים`}
+                  </Text>
+
+                  <TextInput
+                    value={broadcastMessage}
+                    onChangeText={setBroadcastMessage}
+                    placeholder="הקלד הודעה..."
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                    multiline
+                    style={[styles.modalInput, { minHeight: 100, textAlignVertical: 'top', marginTop: 8 }]}
+                  />
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity
+                      onPress={() => setShowBroadcastModal(false)}
+                      style={[styles.modalCancelBtn, isSendingBroadcast && styles.modalButtonDisabled]}
+                      disabled={isSendingBroadcast}
+                    >
+                      <Text style={styles.modalCancelText}>ביטול</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={sendBroadcastToAssignedParents}
+                      style={[styles.modalSaveBtn, isSendingBroadcast && styles.modalButtonDisabled]}
+                      disabled={isSendingBroadcast || isCheckingBroadcastRecipients}
+                    >
+                      <LinearGradient colors={['#00d4ff', '#0099cc']} style={styles.modalSaveBtnGradient}>
+                        <Text style={styles.modalSaveText}>{isSendingBroadcast ? 'שולח...' : 'שלח'}</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                </AppCard>
+              </TouchableWithoutFeedback>
+            </KeyboardAvoidingView>
+          </View>
+        </TouchableWithoutFeedback>
       </Modal>
     </View>
   );
@@ -881,7 +1059,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgDeep },
   scrollContent: { paddingTop: 110, paddingBottom: 60 },
   waveContainer: {
-    position: 'absolute', bottom: 0, left: 0,
+    position: 'absolute', bottom: 0, left: (width - 2400) / 2,
     width: 2400, height: 150, zIndex: 0,
   },
   bubbleWrapper: { position: 'absolute', zIndex: 1 },
@@ -1068,9 +1246,10 @@ const styles = StyleSheet.create({
   cancelButtonTextDisabled: {
     color: 'rgba(255,255,255,0.45)',
   },
-  groupTextWrap: { alignItems: 'flex-end', flex: 1, marginRight: 12 },
-  groupTitle: { color: '#fff', fontSize: 17, fontWeight: '700', writingDirection: 'rtl' },
-  groupSubtitle: { color: 'rgba(255,255,255,0.55)', fontSize: 13, marginTop: 3, writingDirection: 'rtl' },
+  groupTextWrap: { alignItems: 'flex-start', flex: 1, marginLeft: 12 },
+  groupTitle: { color: '#fff', fontSize: 17, fontWeight: '700', writingDirection: 'ltr', textAlign: 'left' },
+  groupSubtitle: { color: 'rgba(255,255,255,0.55)', fontSize: 13, marginTop: 3, writingDirection: 'ltr', textAlign: 'left' },
+  metricText: { color: '#ffd670', fontSize: 13, marginTop: 3, fontWeight: '600', writingDirection: 'ltr', textAlign: 'left', width: '100%' },
 
   // --- ACTION BUTTONS ---
   actionBtn: {
@@ -1147,5 +1326,80 @@ const styles = StyleSheet.create({
   modalSaveBtn: { flex: 1, borderRadius: 18, overflow: 'hidden' },
   modalSaveBtnGradient: { paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
   modalSaveText: { color: '#001529', fontWeight: '800', fontSize: 15 },
+  groupSelectLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  groupChipsContainer: {
+    flexDirection: 'row-reverse',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  groupChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupChipActive: {
+    backgroundColor: 'rgba(0,212,255,0.25)',
+    borderColor: '#00d4ff',
+  },
+  groupChipText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  groupChipTextActive: {
+    color: '#00d4ff',
+    fontWeight: '700',
+  },
+  recipientCountText: {
+    color: '#ffd670',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    marginBottom: 8,
+  },
+  toggleChildrenBtn: {
+    paddingVertical: 6,
+    alignItems: 'flex-start',
+    paddingHorizontal: 8,
+  },
+  toggleChildrenBtnText: {
+    color: '#00d4ff',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'left',
+    writingDirection: 'ltr',
+  },
+  expandedChildrenContainer: {
+    marginTop: 8,
+    paddingHorizontal: 8,
+    alignItems: 'flex-start',
+  },
+  loadingChildrenText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    textAlign: 'left',
+    writingDirection: 'ltr',
+  },
+  childRowText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'left',
+    writingDirection: 'ltr',
+    marginVertical: 3,
+  },
 });
 

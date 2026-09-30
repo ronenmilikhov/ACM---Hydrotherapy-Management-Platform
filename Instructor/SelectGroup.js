@@ -1,7 +1,7 @@
-import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   StyleSheet, Text, View, Animated, Dimensions, TouchableOpacity,
-  StatusBar, Easing, Platform, ScrollView,
+  StatusBar, Easing, Platform, ScrollView, I18nManager,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -49,87 +49,6 @@ const Wave = ({ color, duration, startPosition, d }) => {
   );
 };
 
-// ========================================
-// 2. TRULY INFINITE REINCARNATING BUBBLES
-// ========================================
-const Bubble = () => {
-  const progress = useRef(new Animated.Value(0)).current;
-  const sway = useRef(new Animated.Value(0)).current;
-  const [config, setConfig] = useState({
-    size: Math.random() * 30 + 10,
-    left: Math.random() * width,
-  });
-
-  const durationRef = useRef(Math.random() * 16000 + 14000);
-  const isFirstRun = useRef(true);
-
-  const startFloat = () => {
-    progress.setValue(0);
-    const delay = isFirstRun.current ? Math.random() * 30000 : 0;
-    isFirstRun.current = false;
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: durationRef.current,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        durationRef.current = Math.random() * 16000 + 14000;
-        setConfig({
-          size: Math.random() * 30 + 10,
-          left: Math.random() * width,
-        });
-        startFloat();
-      }
-    });
-  };
-
-  useEffect(() => {
-    startFloat();
-    const swayAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(sway, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: -1, duration: 4000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    );
-    swayAnim.start();
-    return () => { progress.stopAnimation(); sway.stopAnimation(); };
-  }, []);
-
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height + 50, -150] });
-  const opacity = progress.interpolate({ inputRange: [0, 0.1, 0.8, 1], outputRange: [0, 1, 1, 0] });
-  const translateX = sway.interpolate({ inputRange: [-1, 1], outputRange: [-20, 20] });
-
-  return (
-    <Animated.View
-      style={[
-        styles.bubbleWrapper,
-        {
-          width: config.size,
-          height: config.size,
-          borderRadius: config.size / 2,
-          left: config.left,
-          transform: [{ translateY }, { translateX }],
-          opacity,
-        },
-      ]}
-    >
-      <LinearGradient
-        colors={["rgba(255, 255, 255, 0.95)", "rgba(255, 255, 255, 0.1)"]}
-        style={{
-          flex: 1,
-          borderRadius: config.size / 2,
-          borderWidth: 1,
-          borderColor: "rgba(255, 255, 255, 0.4)",
-        }}
-      />
-    </Animated.View>
-  );
-};
 
 // ========================================
 // 3. MAIN COMPONENT
@@ -142,8 +61,6 @@ export default function SelectGroup({ navigation, route }) {
   const [groups, setGroups] = useState([]);
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
   const [loadError, setLoadError] = useState('');
-
-  const bubblePool = useMemo(() => Array.from({ length: 6 }).map((_, i) => i), []);
 
   const surfaceOpacity = scrollY.interpolate({
     inputRange: [0, height * 0.8],
@@ -207,11 +124,8 @@ export default function SelectGroup({ navigation, route }) {
 
       {/* Surface Water */}
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: surfaceOpacity }]}>
-        <LinearGradient colors={['#00aed8', '#007fa7', '#004d73']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={['#00aed8', '#007fa7', '#004d73']} style={{ flex: 1 }} />
       </Animated.View>
-
-      {/* Bubbles */}
-      {bubblePool.map((id) => <Bubble key={id} />)}
 
       {/* Bottom Waves */}
       <Wave
@@ -230,7 +144,7 @@ export default function SelectGroup({ navigation, route }) {
       {/* NAVBAR */}
       <AnimatedBlurView intensity={20} tint="dark" style={[styles.navbar, { backgroundColor: navBg }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.navBackButton}>
-          <Text style={styles.navBackIcon}>‹</Text>
+          <Text style={styles.navBackIcon}>›</Text>
         </TouchableOpacity>
       </AnimatedBlurView>
 
@@ -281,7 +195,7 @@ export default function SelectGroup({ navigation, route }) {
                   <Text style={styles.groupSubtitle}>{g.subtitle}</Text>
                 </View>
                 <View style={styles.groupArrowBg}>
-                  <Text style={styles.groupArrow}>›</Text>
+                  <Text style={styles.groupArrow}>{I18nManager.isRTL ? '‹' : '›'}</Text>
                 </View>
               </AppCard>
             </TouchableOpacity>
@@ -303,30 +217,41 @@ export default function SelectGroup({ navigation, route }) {
 // ========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgDeep },
-  scrollContent: { paddingTop: 110, paddingBottom: 60, paddingHorizontal: 20 },
+  scrollContent: { 
+    paddingTop: Platform.OS === 'ios' ? 120 : (StatusBar.currentHeight || 20) + 80, 
+    paddingBottom: 60, 
+    paddingHorizontal: 20 
+  },
   waveContainer: {
-    position: 'absolute', bottom: 0, left: 0,
+    position: 'absolute', bottom: 0, left: (width - 2400) / 2,
     width: 2400, height: 150, zIndex: 0,
   },
-  bubbleWrapper: { position: 'absolute', zIndex: 1 },
 
   navbar: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    paddingTop: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight || 20) + 15,
-    paddingBottom: 15, paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 42 : (StatusBar.currentHeight || 20) + 6,
+    paddingBottom: 8, paddingHorizontal: 16,
     flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center',
     zIndex: 100,
     borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)',
   },
   navBackButton: {
-    padding: 5,
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   navBackIcon: {
-    color: '#fff',
-    fontSize: 32,
+    color: '#def6ff',
+    fontSize: 22,
+    textAlign: 'center',
   },
 
-  headerArea: { alignItems: 'center', marginBottom: 30, marginTop: 10 },
+  headerArea: { alignItems: 'center', marginBottom: 50, marginTop: 10 },
   pageTitle: {
     fontSize: 32, fontWeight: '800', color: '#00d4ff',
     textShadowColor: 'rgba(0, 212, 255, 0.4)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 15,
@@ -340,14 +265,33 @@ const styles = StyleSheet.create({
   listContainer: { zIndex: 10 },
 
   groupCard: {
-    padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: 18,
+    flexDirection: I18nManager.isRTL ? 'row' : 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
     borderRadius: 20,
   },
-  groupTextWrap: { flex: 1, alignItems: 'flex-end', marginRight: 15 },
-  groupTitle: { color: '#fff', fontSize: 20, fontWeight: '700', writingDirection: 'rtl' },
-  groupSubtitle: { color: 'rgba(255,255,255,0.5)', fontSize: 14, marginTop: 4, writingDirection: 'rtl' },
+  groupTextWrap: {
+    flex: 1,
+    alignItems: 'stretch',
+    marginHorizontal: 24,
+  },
+  groupTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+    writingDirection: 'rtl',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
+  },
+  groupSubtitle: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    marginTop: 4,
+    writingDirection: 'rtl',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
+  },
   groupArrowBg: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: 'rgba(0,212,255,0.15)',
@@ -363,7 +307,7 @@ const styles = StyleSheet.create({
   helperTextMsg: {
     color: 'rgba(255,255,255,0.7)', fontSize: 16, textAlign: 'center', writingDirection: 'rtl',
   },
-  helperTitle: { color: '#00d4ff', fontSize: 16, fontWeight: '700', marginBottom: 6, textAlign: 'right', writingDirection: 'rtl' },
-  helperDesc: { color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'right', writingDirection: 'rtl', lineHeight: 22 },
+  helperTitle: { color: '#00d4ff', fontSize: 16, fontWeight: '700', marginBottom: 6, textAlign: Platform.OS === 'ios' ? 'left' : 'right', writingDirection: 'rtl' },
+  helperDesc: { color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: Platform.OS === 'ios' ? 'left' : 'right', writingDirection: 'rtl', lineHeight: 22 },
 });
 

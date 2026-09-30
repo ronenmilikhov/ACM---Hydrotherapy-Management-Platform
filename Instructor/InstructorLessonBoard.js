@@ -9,6 +9,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  I18nManager,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AquaticBackground from '../components/ui/AquaticBackground';
@@ -72,6 +73,24 @@ const getIsraelTodayIsoDate = () => {
 
 const normalizeStatus = (status) => String(status || '').trim().toLowerCase();
 
+const isLessonExpired = (meetingDateStr, startTimeStr) => {
+  if (!meetingDateStr || !startTimeStr) {
+    return false;
+  }
+  try {
+    const [year, month, day] = meetingDateStr.split('-').map(Number);
+    const [hour, minute] = startTimeStr.split(':').map(Number);
+    if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(minute)) {
+      return false;
+    }
+    const lessonDate = new Date(year, month - 1, day, hour, minute);
+    const now = new Date();
+    return now >= lessonDate;
+  } catch {
+    return false;
+  }
+};
+
 const sortByMeetingDateAndTimeAsc = (a, b) => {
   const aDate = String(a?.meetingDate || '');
   const bDate = String(b?.meetingDate || '');
@@ -116,8 +135,10 @@ const getStatusChipStyle = (status) => {
 };
 
 const InvitationCard = ({ item, onCancel, isCancelling }) => {
-  const statusChip = getStatusChipStyle(item?.status);
-  const isPending = normalizeStatus(item?.status) === 'pending';
+  const expired = normalizeStatus(item?.status) === 'pending' && isLessonExpired(item?.meetingDate, item?.startTime);
+  const displayStatus = expired ? 'Cancelled' : item?.status;
+  const statusChip = getStatusChipStyle(displayStatus);
+  const isPending = normalizeStatus(item?.status) === 'pending' && !expired;
 
   return (
     <View style={styles.invitationCard}>
@@ -132,7 +153,7 @@ const InvitationCard = ({ item, onCancel, isCancelling }) => {
           ]}
         >
           <Text style={[styles.statusChipText, { color: statusChip.textColor }]}>
-            {statusMap[item?.status] || item?.status || 'לא ידוע'}
+            {statusMap[displayStatus] || displayStatus || 'לא ידוע'}
           </Text>
         </View>
 
@@ -150,6 +171,11 @@ const InvitationCard = ({ item, onCancel, isCancelling }) => {
       <Text style={styles.invitationMeta}>
         מצב הורים: {item?.approvedCount || 0} אישרו | {item?.rejectedCount || 0} דחו | {item?.pendingCount || 0} ממתינים
       </Text>
+      {String(item?.targetMetric || '').trim() ? (
+        <Text style={styles.invitationMeta}>
+          מדד מטרה לשיעור: <Text style={{ fontWeight: '800', color: '#ffd685' }}>{item.targetMetric}</Text>
+        </Text>
+      ) : null}
 
       {String(item?.generalNote || '').trim() ? (
         <Text style={styles.invitationNote}>הערת מדריך: {String(item.generalNote).trim()}</Text>
@@ -220,7 +246,10 @@ export default function InstructorLessonBoard({ navigation, route }) {
     const todayIsoDate = getIsraelTodayIsoDate();
 
     const pending = invitations
-      .filter((item) => normalizeStatus(item?.status) === 'pending')
+      .filter((item) => {
+        const isPending = normalizeStatus(item?.status) === 'pending';
+        return isPending && !isLessonExpired(item?.meetingDate, item?.startTime);
+      })
       .sort(sortByMeetingDateAndTimeAsc);
 
     const upcoming = invitations
@@ -236,7 +265,14 @@ export default function InstructorLessonBoard({ navigation, route }) {
       .sort(sortByMeetingDateAndTimeAsc);
 
     const cancelled = invitations
-      .filter((item) => normalizeStatus(item?.status) === 'cancelled')
+      .filter((item) => {
+        const isCancelled = normalizeStatus(item?.status) === 'cancelled';
+        if (isCancelled) {
+          return true;
+        }
+        const isPending = normalizeStatus(item?.status) === 'pending';
+        return isPending && isLessonExpired(item?.meetingDate, item?.startTime);
+      })
       .sort(sortByMeetingDateAndTimeDesc);
 
     return { pending, upcoming, cancelled };
@@ -319,10 +355,11 @@ export default function InstructorLessonBoard({ navigation, route }) {
       <RoleHeader
         title="לוח שיעורים"
         onMenuPress={() => navigation.goBack()}
-        leftIcon="‹"
+        leftIcon="›"
         rightIcon="↻"
         rightLabel="רענון"
         onRightPress={loadInvitations}
+        theme="dark"
       />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -393,8 +430,8 @@ export default function InstructorLessonBoard({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#001529' },
-  content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24, gap: 12 },
+  safeArea: { flex: 1, backgroundColor: '#001529', paddingTop: Platform.OS === 'ios' ? 44 : (Platform.OS === 'android' ? StatusBar.currentHeight : 0) },
+  content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 48, gap: 12 },
   summaryPanel: {
     backgroundColor: 'rgba(8, 60, 97, 0.66)',
     borderRadius: 16,
@@ -407,20 +444,20 @@ const styles = StyleSheet.create({
     color: '#e9f9ff',
     fontSize: 17,
     fontWeight: '800',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   summaryText: {
     color: 'rgba(222, 242, 255, 0.88)',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   summaryCounters: {
     color: '#8ddfff',
     fontSize: 13,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   sectionPanel: {
@@ -435,13 +472,13 @@ const styles = StyleSheet.create({
     color: '#e3f8ff',
     fontSize: 16,
     fontWeight: '800',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   stateText: {
     color: 'rgba(219, 240, 255, 0.84)',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   invitationCard: {
@@ -453,26 +490,26 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   invitationHeaderRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: I18nManager.isRTL ? 'row' : 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
   },
   invitationTitleWrap: {
     flex: 1,
-    alignItems: 'flex-end',
+    alignItems: I18nManager.isRTL ? 'flex-end' : 'flex-start',
   },
   invitationTitle: {
     color: '#f2fbff',
     fontSize: 14,
     fontWeight: '800',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
   invitationSubtitle: {
     color: 'rgba(225, 245, 255, 0.78)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
   statusChip: {
@@ -489,13 +526,13 @@ const styles = StyleSheet.create({
   invitationMeta: {
     color: 'rgba(224, 244, 255, 0.9)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   invitationNote: {
     color: '#d7f3ff',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   cancelShell: { marginTop: 6 },
@@ -504,13 +541,13 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#ffc6d0',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   successText: {
     color: '#95f2cc',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
 });

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 
 namespace ReactServerSide.Controllers
 {
@@ -20,6 +21,13 @@ namespace ReactServerSide.Controllers
             _db = db;
             _httpClientFactory = httpClientFactory;
             _configuration = configuration;
+        }
+
+        [HttpGet("temp-insert")]
+        public IActionResult TempInsert()
+        {
+            _db.CreateTempCompletedLessonInvitation(out int instructorId, out int groupId, out string meetingDateStr, out string targetMetric);
+            return Ok(new { message = "Successfully inserted temp completed lesson invitation!", instructorId, groupId, meetingDate = meetingDateStr, targetMetric });
         }
 
         [HttpGet("instructor/{instructorId:int}/invitations")]
@@ -39,8 +47,107 @@ namespace ReactServerSide.Controllers
             return Ok(invitations.Select(MapInvitation));
         }
 
+        [HttpGet("instructor/{instructorId:int}/child/{childId:int}/lesson-dates")]
+        public IActionResult GetChildLessonDates(int instructorId, int childId)
+        {
+            if (instructorId <= 0 || childId <= 0)
+                return BadRequest(new { message = "Invalid instructor or child id." });
+
+            if (!_db.GetInstructorExists(instructorId))
+                return NotFound(new { message = "Instructor was not found." });
+
+            string todayStr = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            var dateMap = new Dictionary<string, string>();
+
+            // 1. Get scheduled Private lessons for this child
+            try
+            {
+                List<DateTime> privateDates = _db.GetLessonDatesForChild(instructorId, childId);
+                foreach (var d in privateDates)
+                {
+                    string dateStr = d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    dateMap[dateStr] = "אישי";
+                }
+            }
+            catch { }
+
+            // 2. Get active group memberships for this child to find Group session dates
+            try
+            {
+                var gcScan = _db.DynamoDbClient.ScanAsync(new Amazon.DynamoDBv2.Model.ScanRequest
+                {
+                    TableName = "GroupChildren",
+                    FilterExpression = "ChildId = :cid AND IsActive = :active",
+                    ExpressionAttributeValues = new Dictionary<string, Amazon.DynamoDBv2.Model.AttributeValue>
+                    {
+                        [":cid"] = new Amazon.DynamoDBv2.Model.AttributeValue { N = childId.ToString() },
+                        [":active"] = new Amazon.DynamoDBv2.Model.AttributeValue { BOOL = true }
+                    }
+                }).GetAwaiter().GetResult();
+
+                var activeGroupIds = new List<int>();
+                foreach (var item in gcScan.Items)
+                {
+                    if (item.ContainsKey("GroupId") && int.TryParse(item["GroupId"].N, out int gId))
+                    {
+                        activeGroupIds.Add(gId);
+                    }
+                }
+
+                if (activeGroupIds.Count > 0)
+                {
+                    var gtsScan = _db.DynamoDbClient.ScanAsync(new Amazon.DynamoDBv2.Model.ScanRequest
+                    {
+                        TableName = "GroupTrainingSessions",
+                        FilterExpression = "MeetingDate <= :today AND Status <> :cancelled",
+                        ExpressionAttributeValues = new Dictionary<string, Amazon.DynamoDBv2.Model.AttributeValue>
+                        {
+                            [":today"] = new Amazon.DynamoDBv2.Model.AttributeValue { S = todayStr },
+                            [":cancelled"] = new Amazon.DynamoDBv2.Model.AttributeValue { S = "Cancelled" }
+                        }
+                    }).GetAwaiter().GetResult();
+
+                    foreach (var item in gtsScan.Items)
+                    {
+                        if (item.ContainsKey("GroupId") && int.TryParse(item["GroupId"].N, out int gId) &&
+                            activeGroupIds.Contains(gId) && item.ContainsKey("MeetingDate"))
+                        {
+                            string mDate = item["MeetingDate"].S;
+                            dateMap[mDate] = "קבוצתי";
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 3. Get dates from existing progress reports in ReportChildren
+            try
+            {
+                var pastReports = _db.GetChildReportsForMetrics(childId);
+                foreach (var rep in pastReports)
+                {
+                    string dateStr = rep.ReportDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    string mType = (rep.GroupId.HasValue && rep.GroupId.Value > 0) ? "קבוצתי" : "אישי";
+                    dateMap[dateStr] = mType;
+                }
+            }
+            catch { }
+
+            // 4. Sort and return objects
+            var result = dateMap
+                .Select(kv => new
+                {
+                    date = kv.Key,
+                    meetingType = kv.Value
+                })
+                .OrderByDescending(x => x.date)
+                .ToList();
+
+            return Ok(result);
+        }
+
         [HttpGet("instructor/{instructorId:int}/recipients")]
-        public IActionResult GetInstructorRecipients(int instructorId)
+        public IActionResult GetInstructorRecipients(int instructorId, [FromQuery] string? groupIds)
         {
             if (instructorId <= 0)
             {
@@ -53,6 +160,30 @@ namespace ReactServerSide.Controllers
             }
 
             List<LessonInvitationRecipientOptionRecord> recipients = _db.GetInstructorInvitationRecipientOptions(instructorId);
+
+            List<int> selectedGroupIds = new List<int>();
+            if (!string.IsNullOrWhiteSpace(groupIds))
+            {
+                selectedGroupIds = groupIds.Split(',')
+                    .Select(s => int.TryParse(s, out int id) ? id : 0)
+                    .Where(id => id > 0)
+                    .ToList();
+            }
+
+            if (selectedGroupIds.Count > 0)
+            {
+                var childIdsInGroups = new HashSet<int>();
+                foreach (int gId in selectedGroupIds)
+                {
+                    var childIds = _db.GetActiveChildIdsInGroup(gId);
+                    foreach (int cid in childIds)
+                    {
+                        childIdsInGroups.Add(cid);
+                    }
+                }
+                recipients = recipients.Where(r => childIdsInGroups.Contains(r.ChildId)).ToList();
+            }
+
             return Ok(recipients.Select(MapRecipientOption));
         }
 
@@ -90,6 +221,22 @@ namespace ReactServerSide.Controllers
                 return BadRequest(new { message = "StartTime must be earlier than EndTime." });
             }
 
+            if (string.Equals(request.LessonType, "Group", StringComparison.OrdinalIgnoreCase))
+            {
+                if (request.Capacity < 2 || request.Capacity > 20)
+                {
+                    return BadRequest(new { message = "קיבולת בשיעור קבוצתי חייבת להיות בין 2 ל-20." });
+                }
+                if (request.MinRegistrations < 2 || request.MinRegistrations > 20)
+                {
+                    return BadRequest(new { message = "מינימום נרשמים בשיעור קבוצתי חייב להיות בין 2 ל-20." });
+                }
+                if (request.MinRegistrations > request.Capacity)
+                {
+                    return BadRequest(new { message = "מינימום נרשמים לא יכול להיות גדול מהקיבולת." });
+                }
+            }
+
             List<LessonInvitationRecipientSelectionRecord> recipients = (request.Recipients ?? new List<RecipientSelectionRequest>())
                 .Where((item) => item.ParentId > 0 && item.ChildId > 0)
                 .Select((item) => new LessonInvitationRecipientSelectionRecord
@@ -101,7 +248,7 @@ namespace ReactServerSide.Controllers
 
             try
             {
-                DateTime notificationsStartUtc = DateTime.UtcNow.AddSeconds(-2);
+                DateTime notificationsStartUtc = DateTime.UtcNow.AddSeconds(-30);
 
                 LessonInvitationRecord invitation = _db.PostCreateLessonInvitation(
                     instructorId,
@@ -111,6 +258,7 @@ namespace ReactServerSide.Controllers
                     endTime,
                     request.GroupId,
                     request.GeneralNote ?? string.Empty,
+                    request.TargetMetric ?? string.Empty,
                     request.Capacity,
                     request.MinRegistrations,
                     recipients);
@@ -138,7 +286,7 @@ namespace ReactServerSide.Controllers
                 return NotFound(new { message = "Instructor was not found." });
             }
 
-            DateTime notificationsStartUtc = DateTime.UtcNow.AddSeconds(-2);
+            DateTime notificationsStartUtc = DateTime.UtcNow.AddSeconds(-30);
 
             bool canceled = _db.PostCancelLessonInvitation(instructorId, invitationId, request?.Reason ?? string.Empty);
             if (!canceled)
@@ -214,11 +362,25 @@ namespace ReactServerSide.Controllers
                 return BadRequest(new { message = "Message is too long (max 1200 characters)." });
             }
 
-            List<int> parentIds = _db.GetInstructorInvitationRecipientOptions(instructorId)
-                .Select((item) => item.ParentId)
-                .Where((parentId) => parentId > 0)
-                .Distinct()
-                .ToList();
+            List<int> parentIds;
+            if (request.GroupIds != null && request.GroupIds.Count > 0)
+            {
+                var distinctParents = new List<int>();
+                foreach (int gId in request.GroupIds)
+                {
+                    var parentsForGroup = _db.GetInstructorGroupRecipientParents(instructorId, gId);
+                    distinctParents.AddRange(parentsForGroup);
+                }
+                parentIds = distinctParents.Distinct().ToList();
+            }
+            else
+            {
+                parentIds = _db.GetInstructorInvitationRecipientOptions(instructorId)
+                    .Select((item) => item.ParentId)
+                    .Where((parentId) => parentId > 0)
+                    .Distinct()
+                    .ToList();
+            }
 
             if (parentIds.Count == 0)
             {
@@ -250,7 +412,7 @@ namespace ReactServerSide.Controllers
             const string notificationType = "InstructorBroadcast";
             string notificationTitle = $"📣 הודעה חדשה מ-{instructorName}";
 
-            DateTime notificationsStartUtc = DateTime.UtcNow.AddSeconds(-2);
+            DateTime notificationsStartUtc = DateTime.UtcNow.AddSeconds(-30);
 
             foreach (int parentId in parentIds)
             {
@@ -373,7 +535,7 @@ namespace ReactServerSide.Controllers
 
             try
             {
-                DateTime notificationsStartUtc = DateTime.UtcNow.AddSeconds(-2);
+                DateTime notificationsStartUtc = DateTime.UtcNow.AddSeconds(-30);
                 LessonInvitationActionResult result = _db.PostRespondToLessonInvitation(parentId, recipientId, action);
 
                 await TrySendNewLessonNotificationsPushAsync(notificationsStartUtc, result.InvitationId);
@@ -494,12 +656,14 @@ namespace ReactServerSide.Controllers
                 capacity = invitation.Capacity,
                 minRegistrations = invitation.MinRegistrations,
                 generalNote = invitation.GeneralNote,
+                targetMetric = invitation.TargetMetric,
                 status = invitation.Status,
                 recipientsCount = invitation.RecipientsCount,
                 approvedCount = invitation.ApprovedCount,
                 rejectedCount = invitation.RejectedCount,
                 pendingCount = invitation.PendingCount,
-                createdAt = invitation.CreatedAtUtc
+                createdAt = invitation.CreatedAtUtc,
+                hasReport = invitation.HasReport
             };
         }
 
@@ -524,7 +688,8 @@ namespace ReactServerSide.Controllers
                 startTime = notification.StartTime?.ToString(@"hh\:mm", CultureInfo.InvariantCulture),
                 endTime = notification.EndTime?.ToString(@"hh\:mm", CultureInfo.InvariantCulture),
                 invitationStatus = notification.InvitationStatus,
-                recipientResponseStatus = notification.RecipientResponseStatus
+                recipientResponseStatus = notification.RecipientResponseStatus,
+                targetMetric = notification.TargetMetric
             };
         }
 
@@ -692,8 +857,9 @@ namespace ReactServerSide.Controllers
             public string StartTime { get; set; } = string.Empty;
             public string EndTime { get; set; } = string.Empty;
             public int Capacity { get; set; } = 20;
-            public int MinRegistrations { get; set; } = 5;
+            public int MinRegistrations { get; set; } = 2;
             public string? GeneralNote { get; set; }
+            public string? TargetMetric { get; set; }
             public List<RecipientSelectionRequest> Recipients { get; set; } = new List<RecipientSelectionRequest>();
         }
 
@@ -717,6 +883,7 @@ namespace ReactServerSide.Controllers
         {
             public string Message { get; set; } = string.Empty;
             public string? InstructorName { get; set; }
+            public List<int>? GroupIds { get; set; }
         }
 
         public class MarkParentChatNotificationsAsReadRequest

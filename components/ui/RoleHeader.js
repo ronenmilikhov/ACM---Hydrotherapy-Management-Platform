@@ -6,7 +6,7 @@ export default function RoleHeader({
   subtitle,
   onMenuPress,
   onLeftPress,
-  leftIcon = '‹',
+  leftIcon = '›',
   leftLabel,
   showLeftButton = true,
   onRightPress,
@@ -14,6 +14,7 @@ export default function RoleHeader({
   rightLabel,
   showRightButton = true,
   theme = 'light',
+  titleStyle,
 }) {
   const leftPressHandler = onLeftPress || onMenuPress;
   const isDark = theme === 'dark';
@@ -35,7 +36,7 @@ export default function RoleHeader({
       )}
 
       <View style={styles.headerCenter}>
-        <Text style={[styles.headerTitle, isDark ? styles.headerTitleDark : null]}>{title}</Text>
+        <Text style={[styles.headerTitle, isDark ? styles.headerTitleDark : null, titleStyle]}>{title}</Text>
         {!!subtitle && <Text style={[styles.headerSubtitle, isDark ? styles.headerSubtitleDark : null]}>{subtitle}</Text>}
       </View>
 
@@ -58,8 +59,9 @@ export default function RoleHeader({
 
 const styles = StyleSheet.create({
   header: {
-    marginTop: 12,
-    paddingHorizontal: 18,
+    marginTop: 2,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -69,21 +71,21 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   iconButton: {
-    minWidth: 44,
-    minHeight: 36,
+    width: 42,
+    height: 42,
     justifyContent: 'center',
     alignItems: 'center',
   },
   iconButtonDark: {
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: 'rgba(255,255,255,0.18)',
     backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 6,
   },
   headerIcon: {
-    fontSize: 28,
+    fontSize: 22,
     color: '#1D2935',
+    textAlign: 'center',
   },
   headerIconDark: {
     color: '#def6ff',
@@ -94,21 +96,22 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: '#1F8FD7',
-    fontSize: 32,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
     writingDirection: 'rtl',
     textAlign: 'center',
   },
   headerTitleDark: {
-    color: '#f3fbff',
-    textShadowColor: 'rgba(0, 212, 255, 0.35)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
+    color: '#ffffff',
+    fontWeight: '800',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   headerSubtitle: {
     marginTop: 2,
     color: '#7D95AA',
-    fontSize: 12,
+    fontSize: 11,
     writingDirection: 'rtl',
     textAlign: 'center',
   },
@@ -117,8 +120,8 @@ const styles = StyleSheet.create({
   },
   searchLabel: {
     color: '#517796',
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 11,
+    marginTop: 1,
     textAlign: 'center',
     writingDirection: 'rtl',
   },
@@ -127,7 +130,7 @@ const styles = StyleSheet.create({
   },
   leftLabel: {
     color: '#517796',
-    fontSize: 11,
+    fontSize: 10,
     marginTop: 1,
     textAlign: 'center',
     writingDirection: 'rtl',

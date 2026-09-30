@@ -1,0 +1,13 @@
+.gcloudignore
+# Ignore local build artifacts
+bin/
+obj/
+publish/
+wwwroot/chat-attachments/
+.vscode/
+.vs/
+*.user
+gcp-key.json
+lambda.zip
+deploy.zip
+source.tar.gz

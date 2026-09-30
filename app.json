@@ -2,6 +2,7 @@
   "expo": {
     "name": "MyApp",
     "slug": "MyApp",
+    "privacy": "public",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,7 +14,12 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shachar2003.MyApp",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to use your camera for chat photo attachments.",
+        "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos for chat attachments."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,14 +28,15 @@
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
+        "android.permission.RECORD_AUDIO",
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "package": "com.shachar2003.MyApp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "@react-native-community/datetimepicker",
       "expo-notifications",
       [
         "expo-image-picker",
@@ -38,13 +45,27 @@
           "photosPermission": "Allow $(PRODUCT_NAME) to access your photos for chat attachments."
         }
       ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
       "expo-font"
     ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "owner": "huntingforeu",
     "extra": {
       "eas": {
-        "projectId": "75f721ec-fffa-4a66-b0d5-0fcdacd5b074"
+        "projectId": "ff170d0a-60b6-438d-85d9-d9ec567eb68f"
       }
     },
-    "owner": "orsadofski"
+    "updates": {
+      "url": "https://u.expo.dev/ff170d0a-60b6-438d-85d9-d9ec567eb68f"
+    }
   }
 }

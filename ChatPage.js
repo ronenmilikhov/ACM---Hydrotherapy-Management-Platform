@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   StyleSheet, Text, View, Animated, Dimensions, TouchableOpacity,
   TextInput, StatusBar, Easing, KeyboardAvoidingView, Platform, FlatList, Alert, Image, Modal,
+  I18nManager,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path } from 'react-native-svg';
 import { PanGestureHandler, PinchGestureHandler, State as GestureState } from 'react-native-gesture-handler';
 import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
 import { colors, shadows } from './theme/tokens';
 import { API_BASE_URL } from './apiConfig';
 import { markParentChatNotificationsAsRead } from './notifications/parentNotifications';
@@ -94,12 +96,16 @@ const resolveAttachmentUrl = (rawUrl) => {
 
   // Already a full URL with a scheme – rewrite its origin to match the client's config
   if (/^https?:\/\//i.test(url)) {
-    try {
-      const parsed = new URL(url);
-      // Keep only the pathname (+ search/hash if any)
-      resolved = `${SERVER_ORIGIN}${parsed.pathname}${parsed.search}${parsed.hash}`;
-    } catch (_e) {
+    if (url.includes('firebasestorage.googleapis.com') || url.includes('firebasestorage.app')) {
       resolved = url;
+    } else {
+      try {
+        const parsed = new URL(url);
+        // Keep only the pathname (+ search/hash if any)
+        resolved = `${SERVER_ORIGIN}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      } catch (_e) {
+        resolved = url;
+      }
     }
   } else if (url.startsWith('/')) {
     // Relative path
@@ -144,23 +150,23 @@ const parseChatMessagePayload = (rawMessageText) => {
     const attachmentUrl = String(payload?.url ?? payload?.Url ?? '').trim();
     const captionText = String(payload?.caption ?? payload?.Caption ?? '').trim();
 
-    if (attachmentType === 'image' && attachmentUrl) {
+    if (attachmentType === 'image') {
       return {
         text: captionText,
-        attachmentType,
-        attachmentUrl: resolveAttachmentUrl(attachmentUrl),
+        attachmentType: attachmentUrl ? attachmentType : '',
+        attachmentUrl: attachmentUrl ? resolveAttachmentUrl(attachmentUrl) : '',
       };
     }
   } catch (_error) {
     return {
-      text: normalizedText,
+      text: '',
       attachmentType: '',
       attachmentUrl: '',
     };
   }
 
   return {
-    text: normalizedText,
+    text: '',
     attachmentType: '',
     attachmentUrl: '',
   };
@@ -201,84 +207,6 @@ const Wave = ({ color, duration, startPosition, d }) => {
   );
 };
 
-// ========================================
-// 2. INFINITE REINCARNATING BUBBLES
-// ========================================
-const Bubble = () => {
-  const progress = useRef(new Animated.Value(0)).current;
-  const sway = useRef(new Animated.Value(0)).current;
-
-  const [config, setConfig] = useState({
-    size: Math.random() * 30 + 10,
-    left: Math.random() * width,
-  });
-
-  const durationRef = useRef(Math.random() * 16000 + 14000);
-  const isFirstRun = useRef(true);
-
-  const startFloat = () => {
-    progress.setValue(0);
-    const delay = isFirstRun.current ? Math.random() * 30000 : 0;
-    isFirstRun.current = false;
-
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: durationRef.current,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        durationRef.current = Math.random() * 16000 + 14000;
-        setConfig({
-          size: Math.random() * 30 + 10,
-          left: Math.random() * width,
-        });
-        startFloat();
-      }
-    });
-  };
-
-  useEffect(() => {
-    startFloat();
-    const swayAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(sway, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: -1, duration: 4000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    );
-    swayAnim.start();
-    return () => { progress.stopAnimation(); sway.stopAnimation(); };
-  }, []);
-
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height + 50, -150] });
-  const opacity = progress.interpolate({ inputRange: [0, 0.1, 0.8, 1], outputRange: [0, 1, 1, 0] });
-  const translateXVal = sway.interpolate({ inputRange: [-1, 1], outputRange: [-20, 20] });
-
-  return (
-    <Animated.View
-      style={[
-        styles.bubbleWrapper,
-        {
-          width: config.size,
-          height: config.size,
-          borderRadius: config.size / 2,
-          left: config.left,
-          transform: [{ translateY }, { translateX: translateXVal }],
-          opacity,
-        },
-      ]}
-    >
-      <LinearGradient
-        colors={["rgba(255,255,255,0.95)", "rgba(255,255,255,0.1)"]}
-        style={{ flex: 1, borderRadius: config.size / 2, borderWidth: 1, borderColor: "rgba(255,255,255,0.4)" }}
-      />
-    </Animated.View>
-  );
-};
 
 // ========================================
 // 3. CHAT ATTACHMENT IMAGE (with auto-retry)
@@ -369,12 +297,89 @@ const ChatAttachmentImage = ({ uri, style, resizeMode, onPress }) => {
 };
 
 // ========================================
+// 3a. PARSED MESSAGE TEXT RENDERER (Clean, Delicate, and Colored)
+// ========================================
+const renderInlineStyles = (inputText) => {
+  if (!inputText) return '';
+
+  // Split by '**' to alternate between regular and bold text
+  const parts = inputText.split('**');
+  if (parts.length === 1) {
+    return inputText;
+  }
+
+  return parts.map((part, index) => {
+    if (index % 2 === 1) {
+      return (
+        <Text key={index} style={styles.msgTextBold}>
+          {part}
+        </Text>
+      );
+    }
+    return part;
+  });
+};
+
+const renderParsedMessageText = (text, isAi, isMe) => {
+  if (!text) return null;
+
+  // Split by newline to handle bullet points and paragraphs
+  const lines = text.split('\n');
+  
+  const alignmentStyle = {
+    textAlign: 'left',
+    alignSelf: 'stretch',
+    width: '100%',
+  };
+
+  return lines.map((line, lineIndex) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return <View key={lineIndex} style={{ height: 6 }} />;
+    }
+
+    // Check if line matches a numbered list pattern: e.g. "1. ", "2) ", "3- "
+    const matchNumbered = trimmed.match(/^(\d+)[\.\-\)]\s*(.*)$/);
+    if (matchNumbered) {
+      const num = matchNumbered[1];
+      const content = matchNumbered[2];
+      return (
+        <Text key={lineIndex} style={[styles.msgParagraph, alignmentStyle]}>
+          {`${num}. `}
+          {renderInlineStyles(content)}
+        </Text>
+      );
+    }
+
+    // Check if line matches a bullet point pattern: e.g. "* ", "- ", "• "
+    const matchBullet = trimmed.match(/^(?:[\-\•]\s*|\*\s+)(.*)$/);
+    if (matchBullet) {
+      const content = matchBullet[1];
+      return (
+        <Text key={lineIndex} style={[styles.msgParagraph, alignmentStyle]}>
+          {'• '}
+          {renderInlineStyles(content)}
+        </Text>
+      );
+    }
+
+    // Normal paragraph text
+    return (
+      <Text key={lineIndex} style={[styles.msgParagraph, alignmentStyle]}>
+        {renderInlineStyles(trimmed)}
+      </Text>
+    );
+  });
+};
+
+// ========================================
 // 3b. ANIMATED MESSAGE BUBBLE
 // ========================================
-const MessageBubble = ({ item, isMe, onImagePress }) => {
+const MessageBubble = ({ item, isMe, onImagePress, onLongPress }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(isMe ? 30 : -30)).current;
   const hasImageAttachment = item.attachmentType === 'image' && Boolean(item.attachmentUrl);
+  const isAi = item.senderId === 'ai-assistant';
 
   useEffect(() => {
     Animated.parallel([
@@ -388,6 +393,25 @@ const MessageBubble = ({ item, isMe, onImagePress }) => {
 
   const timeStr = formatChatMessageTime(item.timestamp);
 
+  // If AI, render a beautiful glowing deep-sea teal/cyan gradient; otherwise BlurView
+  const BubbleWrapper = isAi ? LinearGradient : BlurView;
+  const bubbleWrapperProps = isAi
+    ? {
+      colors: ['rgba(12, 53, 80, 0.95)', 'rgba(4, 20, 32, 0.98)'],
+      style: StyleSheet.absoluteFill,
+    }
+    : {
+      intensity: 20,
+      tint: 'dark',
+      style: StyleSheet.absoluteFill,
+    };
+
+  const bubbleContainerStyle = [
+    styles.msgBubble,
+    isAi ? styles.msgBubbleAI : (isMe ? styles.msgBubbleMe : styles.msgBubbleOther),
+    { overflow: 'hidden' }
+  ];
+
   return (
     <Animated.View
       style={[
@@ -396,19 +420,24 @@ const MessageBubble = ({ item, isMe, onImagePress }) => {
         { opacity: fadeAnim, transform: [{ translateX: slideAnim }] },
       ]}
     >
-      {/* Sender avatar for received messages */}
-      {!isMe && (
-        <LinearGradient colors={['#00d4ff', '#0077aa']} style={styles.msgAvatar}>
+      {/* Sender avatar for sent messages */}
+      {isMe && (
+        <LinearGradient colors={['#00b8d4', '#0099cc']} style={styles.msgAvatar}>
           <Text style={styles.msgAvatarText}>{item.senderName?.[0] || '?'}</Text>
         </LinearGradient>
       )}
 
-      <BlurView intensity={20} tint="dark" style={[
-        styles.msgBubble,
-        isMe ? styles.msgBubbleMe : styles.msgBubbleOther,
-      ]}>
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onLongPress={() => onLongPress?.(item)}
+        delayLongPress={300}
+        style={bubbleContainerStyle}
+      >
+        <BubbleWrapper {...bubbleWrapperProps} />
         {!isMe && (
-          <Text style={styles.msgSender}>{item.senderName}</Text>
+          <Text style={[styles.msgSender, isAi ? styles.msgSenderAI : null, { textAlign: 'left' }]}>
+            {isAi ? '✨ עוזר AI חכם' : item.senderName}
+          </Text>
         )}
 
         {hasImageAttachment ? (
@@ -421,10 +450,12 @@ const MessageBubble = ({ item, isMe, onImagePress }) => {
         ) : null}
 
         {item.text ? (
-          <Text style={styles.msgText}>{item.text}</Text>
+          <View style={{ alignSelf: 'stretch' }}>
+            {renderParsedMessageText(item.text, isAi, isMe)}
+          </View>
         ) : null}
 
-        <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>{timeStr}</Text>
+        <Text style={[styles.msgTime, { textAlign: isMe ? 'right' : 'left' }]}>{timeStr}</Text>
 
         {item.isPending ? (
           <Text style={[styles.msgDeliveryState, styles.msgDeliveryPending]}>שולח...</Text>
@@ -433,16 +464,35 @@ const MessageBubble = ({ item, isMe, onImagePress }) => {
         {item.isFailed ? (
           <Text style={[styles.msgDeliveryState, styles.msgDeliveryFailed]}>לא נשלח</Text>
         ) : null}
-      </BlurView>
+      </TouchableOpacity>
 
-      {/* Sender avatar for sent messages */}
-      {isMe && (
-        <LinearGradient colors={['#00b8d4', '#0099cc']} style={styles.msgAvatar}>
-          <Text style={styles.msgAvatarText}>{item.senderName?.[0] || '?'}</Text>
+      {/* Sender avatar for received messages */}
+      {!isMe && (
+        <LinearGradient
+          colors={isAi ? ['#00f2fe', '#0077aa'] : ['#00d4ff', '#0077aa']}
+          style={styles.msgAvatar}
+        >
+          <Text style={styles.msgAvatarText}>{isAi ? '🤖' : (item.senderName?.[0] || '?')}</Text>
         </LinearGradient>
       )}
     </Animated.View>
   );
+};
+
+const getWelcomeMessage = (isManager) => {
+  const text = isManager
+    ? `שלום! 👋 אני העוזר האישי החכם של מנהל בית הספר ACM.\n\nאתה יכול לשאול אותי כל שאלה על השיעורים, הקבוצות, המדריכים או התקדמות הילדים.\n\nלמשל:\n• "איזה קבוצות שחייה קיימות?"\n• "הראה לי את רשימת המדריכים הפעילים"\n• "תן לי את הדוח של דניאל"\n• "מה שיעורי הנוכחות של קבוצת הדולפינים?"\n• "הצג לי את השיעורים המתוכננים השבוע"`
+    : `שלום! 👋 אני העוזר האישי החכם שלך.\n\nאתה יכול לשאול אותי כל שאלה על השיעורים, הקבוצות או התקדמות הילדים.\n\nלמשל:\n• "תן לי את הדוח של דניאל"\n• "מה המפגשים הקרובים שלי?"\n• "איזה ילד מתקשה בציפה?"\n• "מה הציון הממוצע של קבוצת הדולפינים?"\n• "הראה לי סיכום של כל הילדים בקבוצה"`;
+
+  return {
+    id: 'ai-welcome',
+    senderId: 'ai-assistant',
+    senderName: '🤖 עוזר AI',
+    text,
+    attachmentType: '',
+    attachmentUrl: '',
+    timestamp: new Date().toISOString(),
+  };
 };
 
 // ========================================
@@ -450,31 +500,44 @@ const MessageBubble = ({ item, isMe, onImagePress }) => {
 // ========================================
 export default function ChatPage({ navigation, route }) {
   const fromInstructor = route?.params?.fromInstructor ?? false;
+  const isAiChat = route?.params?.isAiChat ?? false;
+  const isManager = route?.params?.isManager ?? false;
   const initialConversationId = Number(route?.params?.conversationId ?? 0);
   const parentId = Number(route?.params?.parentId ?? 0);
   const childId = Number(route?.params?.childId ?? 0);
   const instructorId = Number(route?.params?.instructorId ?? 0);
   const parentName = route?.params?.parentName || 'הורה';
-  const instructorName = route?.params?.instructorName || 'מדריך';
+  const instructorName = route?.params?.instructorName || (isManager ? 'מנהל' : 'מדריך');
   const childName = route?.params?.childName || '';
 
-  const hasLiveConversation = parentId > 0 && childId > 0 && instructorId > 0;
+  const chatRolePrefix = isManager ? 'manager' : 'instructor';
 
-  const currentUserId = hasLiveConversation
-    ? (fromInstructor ? `instructor-${instructorId}` : `parent-${parentId}`)
-    : (fromInstructor ? 'instructor1' : 'parent1');
+  // AI chat mode disables the live-conversation flow entirely
+  const hasLiveConversation = !isAiChat && parentId > 0 && childId > 0 && instructorId > 0;
 
-  const headerCounterpartLine = hasLiveConversation
-    ? (fromInstructor
-      ? `הורה: ${(parentName || '').trim() || 'לא זמין'}`
-      : `מדריך: ${(instructorName || '').trim() || 'לא זמין'}`)
+  const currentUserId = isAiChat
+    ? (isManager ? `manager-${instructorId}` : `instructor-${instructorId}`)
+    : hasLiveConversation
+      ? (fromInstructor ? `instructor-${instructorId}` : `parent-${parentId}`)
+      : (fromInstructor ? 'instructor1' : 'parent1');
+
+  const headerTitleText = isAiChat
+    ? "צ'אט AI"
     : (fromInstructor
-      ? `הורה: ${(parentName || '').trim() || 'לא זמין'}`
-      : 'מדריך: שי שוורצנגר');
+      ? ((parentName || '').trim() || "הורה")
+      : ((instructorName || '').trim() || "מדריך"));
 
-  const headerChildLine = hasLiveConversation
-    ? `ילד: ${(childName || '').trim() || 'לא זמין'}`
-    : 'ילד: ללא בחירה';
+  const headerSubtitleText = isAiChat
+    ? null
+    : (childName && childName.trim() && childName.trim() !== 'ללא בחירה' && childName.trim() !== 'לא זמין'
+      ? (fromInstructor ? `ההורה של ${childName.trim()}` : `הילד/ה: ${childName.trim()}`)
+      : null);
+
+  // Tracks conversation history for AI chat context
+  const aiChatHistoryRef = useRef([]);
+  const abortControllerRef = useRef(null);
+  const isCancelledRef = useRef(false);
+  const aiPollIntervalRef = useRef(null);
 
   const [conversationId, setConversationId] = useState(null);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
@@ -484,6 +547,8 @@ export default function ChatPage({ navigation, route }) {
   const [pendingAttachment, setPendingAttachment] = useState(null);
   const [zoomImageUri, setZoomImageUri] = useState('');
   const [isImagePannable, setIsImagePannable] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const scrollToBottomOpacity = useRef(new Animated.Value(0)).current;
   const zoomBaseScale = useRef(new Animated.Value(1)).current;
   const zoomPinchScale = useRef(new Animated.Value(1)).current;
   const zoomBaseTranslateX = useRef(new Animated.Value(0)).current;
@@ -521,12 +586,39 @@ export default function ChatPage({ navigation, route }) {
   const didInitialAutoScrollRef = useRef(false);
   const latestMessagesRequestIdRef = useRef(0);
   const scrollY = useRef(new Animated.Value(0)).current;
-  const bubblePool = useMemo(() => Array.from({ length: 5 }).map((_, i) => i), []);
 
   const scrollToLatestMessage = useCallback((animated = false) => {
     requestAnimationFrame(() => {
       flatListRef.current?.scrollToEnd({ animated });
     });
+  }, []);
+
+  const isScrollingToBottomRef = useRef(false);
+
+  const handleScroll = useCallback((event) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 150;
+    
+    if (isScrollingToBottomRef.current) {
+      if (isCloseToBottom) {
+        isScrollingToBottomRef.current = false;
+      }
+      setShowScrollToBottom(false);
+    } else {
+      setShowScrollToBottom(!isCloseToBottom);
+    }
+    
+    scrollY.setValue(contentOffset.y);
+  }, [scrollY]);
+
+  const handleScrollToBottomPress = useCallback(() => {
+    isScrollingToBottomRef.current = true;
+    setShowScrollToBottom(false);
+    scrollToLatestMessage(true);
+  }, [scrollToLatestMessage]);
+
+  const handleMomentumScrollEnd = useCallback(() => {
+    isScrollingToBottomRef.current = false;
   }, []);
 
   // Typing indicator pulse
@@ -833,8 +925,8 @@ export default function ChatPage({ navigation, route }) {
             body: JSON.stringify({ parentId, childId, instructorId }),
           });
 
-          const conversationPayload = await conversationResponse.json();
-          if (!conversationResponse.ok) {
+          const conversationPayload = await conversationResponse.json().catch(() => null);
+          if (!conversationResponse.ok || !conversationPayload) {
             throw new Error(conversationPayload?.message || 'Failed to create or fetch conversation.');
           }
 
@@ -904,11 +996,19 @@ export default function ChatPage({ navigation, route }) {
   }, [hasLiveConversation, fromInstructor, parentId, instructorId]);
 
   useEffect(() => {
-    didInitialAutoScrollRef.current = false;
-  }, [conversationId]);
+    return () => {
+      if (aiPollIntervalRef.current) {
+        clearInterval(aiPollIntervalRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
-    if (!conversationId || messages.length === 0) {
+    didInitialAutoScrollRef.current = false;
+  }, [conversationId, isAiChat]);
+
+  useEffect(() => {
+    if ((!conversationId && !isAiChat) || messages.length === 0) {
       return;
     }
 
@@ -926,10 +1026,18 @@ export default function ChatPage({ navigation, route }) {
     }
 
     return undefined;
-  }, [conversationId, messages.length, scrollToLatestMessage]);
+  }, [conversationId, isAiChat, messages.length, scrollToLatestMessage]);
 
   useEffect(() => {
-    if (!hasLiveConversation && isTyping) {
+    Animated.timing(scrollToBottomOpacity, {
+      toValue: showScrollToBottom ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [showScrollToBottom]);
+
+  useEffect(() => {
+    if (isTyping && (isAiChat || !hasLiveConversation)) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(typingPulse, { toValue: 1, duration: 600, useNativeDriver: true }),
@@ -939,12 +1047,314 @@ export default function ChatPage({ navigation, route }) {
     } else {
       typingPulse.setValue(0.4);
     }
-  }, [isTyping, hasLiveConversation]);
+  }, [isTyping, isAiChat, hasLiveConversation]);
+
+  const startAiThinkingPoll = useCallback(() => {
+    if (aiPollIntervalRef.current) {
+      clearInterval(aiPollIntervalRef.current);
+    }
+
+    let pollCount = 0;
+    const maxPolls = 60; // 120 seconds maximum polling time
+
+    setIsSending(true);
+    setIsTyping(true);
+
+    aiPollIntervalRef.current = setInterval(async () => {
+      pollCount++;
+      if (pollCount > maxPolls) {
+        clearInterval(aiPollIntervalRef.current);
+        aiPollIntervalRef.current = null;
+        setIsSending(false);
+        setIsTyping(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/chat/${chatRolePrefix}/${instructorId}/ai-chat/history`);
+        if (!response.ok) return;
+
+        const dbMessages = await response.json().catch(() => null);
+        if (dbMessages && dbMessages.length > 0) {
+          const lastMsg = dbMessages[dbMessages.length - 1];
+          if (lastMsg && lastMsg.senderType === 'ai') {
+            clearInterval(aiPollIntervalRef.current);
+            aiPollIntervalRef.current = null;
+
+            const welcomeMsg = getWelcomeMessage(isManager);
+            const mapped = dbMessages.map((msg, index) => ({
+              id: `ai-db-${index}-${msg.sentAt}`,
+              senderId: msg.senderType === 'ai' ? 'ai-assistant' : currentUserId,
+              senderName: msg.senderType === 'ai' ? '🤖 עוזר AI' : instructorName,
+              text: msg.messageText,
+              attachmentType: '',
+              attachmentUrl: '',
+              timestamp: msg.sentAt,
+            }));
+
+            aiChatHistoryRef.current = dbMessages.map(msg => ({
+              senderType: msg.senderType === 'ai' ? 'AI' : 'User',
+              messageText: msg.messageText
+            }));
+
+            setMessages([welcomeMsg, ...mapped]);
+            setIsSending(false);
+            setIsTyping(false);
+            setTimeout(() => scrollToLatestMessage(true), 60);
+          }
+        }
+      } catch (err) {
+        console.error('Error polling AI history:', err);
+      }
+    }, 2000);
+  }, [chatRolePrefix, instructorId, isManager, currentUserId, instructorName, scrollToLatestMessage]);
+
+  // Add a welcome message and fetch chat history when AI chat mode opens
+  useEffect(() => {
+    if (!isAiChat) return;
+
+    let isMounted = true;
+
+    const fetchAiHistory = async () => {
+      try {
+        const welcomeMsg = getWelcomeMessage(isManager);
+
+        const response = await fetch(`${API_BASE_URL}/chat/${chatRolePrefix}/${instructorId}/ai-chat/history`);
+        if (!response.ok) {
+          throw new Error('Failed to load chat history');
+        }
+
+        const dbMessages = await response.json().catch(() => null);
+
+        if (!isMounted) return;
+
+        if (dbMessages && dbMessages.length > 0) {
+          const mapped = dbMessages.map((msg, index) => ({
+            id: `ai-db-${index}-${msg.sentAt}`,
+            senderId: msg.senderType === 'ai' ? 'ai-assistant' : currentUserId,
+            senderName: msg.senderType === 'ai' ? '🤖 עוזר AI' : instructorName,
+            text: msg.messageText,
+            attachmentType: '',
+            attachmentUrl: '',
+            timestamp: msg.sentAt,
+          }));
+
+          aiChatHistoryRef.current = dbMessages.map(msg => ({
+            senderType: msg.senderType === 'ai' ? 'AI' : 'User',
+            messageText: msg.messageText
+          }));
+
+          setMessages([welcomeMsg, ...mapped]);
+
+          // Check if last message is from user and was sent recently (e.g. within 2 minutes)
+          const lastMsg = dbMessages[dbMessages.length - 1];
+          if (lastMsg && lastMsg.senderType === 'user') {
+            const sentAtTime = new Date(lastMsg.sentAt).getTime();
+            const diffMs = Date.now() - sentAtTime;
+            if (diffMs < 120000) {
+              startAiThinkingPoll();
+            }
+          }
+        } else {
+          aiChatHistoryRef.current = [];
+          setMessages([welcomeMsg]);
+        }
+      } catch (err) {
+        console.error('Error fetching AI history:', err);
+        if (!isMounted) return;
+
+        const welcomeMsg = getWelcomeMessage(isManager);
+        setMessages([welcomeMsg]);
+      }
+    };
+
+    fetchAiHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isAiChat, instructorId, currentUserId, instructorName, isManager, chatRolePrefix, startAiThinkingPoll]);
+
+  const handleClearAiChat = useCallback(() => {
+    Alert.alert(
+      'ניקוי שיחה',
+      'האם אתה בטוח שברצונך למחוק את כל היסטוריית השיחה?',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'מחק',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch(`${API_BASE_URL}/chat/${chatRolePrefix}/${instructorId}/ai-chat/history`, {
+                method: 'DELETE',
+              });
+              if (!response.ok) {
+                throw new Error('Failed to delete history');
+              }
+              const welcomeMsg = getWelcomeMessage(isManager);
+              setMessages([welcomeMsg]);
+              aiChatHistoryRef.current = [];
+            } catch (err) {
+              console.error('Error clearing AI chat history:', err);
+              Alert.alert('שגיאה', 'לא ניתן למחוק את היסטוריית השיחה כעת. אנא נסה שוב מאוחר יותר.');
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  }, [instructorId, chatRolePrefix, isManager]);
+
+  const handleStopThinking = useCallback(() => {
+    isCancelledRef.current = true;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    if (aiPollIntervalRef.current) {
+      clearInterval(aiPollIntervalRef.current);
+      aiPollIntervalRef.current = null;
+      setIsSending(false);
+      setIsTyping(false);
+    }
+  }, []);
+
+  const handleLongPressMessage = useCallback((message) => {
+    if (!message || !message.text) return;
+    
+    Alert.alert(
+      'אפשרויות הודעה',
+      '',
+      [
+        {
+          text: 'העתק הודעה',
+          onPress: async () => {
+            await Clipboard.setStringAsync(message.text);
+            Alert.alert('הודעה', 'הטקסט הועתק ללוח!');
+          }
+        },
+        {
+          text: 'ביטול',
+          style: 'cancel'
+        }
+      ],
+      { cancelable: true }
+    );
+  }, []);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed) return;
 
+    // ── AI CHAT MODE ──
+    if (isAiChat) {
+      if (isSending) return;
+
+      const userMsgId = `user-${Date.now()}`;
+      const userMsg = {
+        id: userMsgId,
+        senderId: currentUserId,
+        senderName: instructorName,
+        text: trimmed,
+        attachmentType: '',
+        attachmentUrl: '',
+        timestamp: new Date().toISOString(),
+      };
+
+      setMessages((prev) => [...prev, userMsg]);
+      setInput('');
+      setIsTyping(true);
+      setTimeout(() => scrollToLatestMessage(true), 60);
+
+      try {
+        setIsSending(true);
+        isCancelledRef.current = false;
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        const response = await fetch(`${API_BASE_URL}/chat/${chatRolePrefix}/${instructorId}/ai-chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messageText: trimmed,
+            history: aiChatHistoryRef.current,
+          }),
+          signal: controller.signal,
+        });
+
+        if (isCancelledRef.current) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+
+        const payload = await response.json().catch(() => null);
+
+        if (isCancelledRef.current) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+
+        if (isCancelledRef.current) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        if (!response.ok) {
+          throw new Error(payload?.message || 'Failed to get AI response.');
+        }
+
+        const aiReplyText = payload?.reply || payload?.response || 'לא הצלחתי לעבד את הבקשה.';
+
+        // Append user + AI messages to persistent conversation history
+        aiChatHistoryRef.current = [
+          ...aiChatHistoryRef.current,
+          { senderType: 'User', messageText: trimmed },
+          { senderType: 'AI', messageText: aiReplyText },
+        ];
+
+        const aiMsg = {
+          id: `ai-${Date.now()}`,
+          senderId: 'ai-assistant',
+          senderName: '🤖 עוזר AI',
+          text: aiReplyText,
+          attachmentType: '',
+          attachmentUrl: '',
+          timestamp: new Date().toISOString(),
+        };
+
+        setMessages((prev) => [...prev, aiMsg]);
+        setTimeout(() => scrollToLatestMessage(true), 60);
+      } catch (error) {
+        if (isCancelledRef.current || error.name === 'AbortError' || String(error?.message).includes('aborted')) {
+          const cancelMsg = {
+            id: `ai-cancel-${Date.now()}`,
+            senderId: 'ai-assistant',
+            senderName: '🤖 עוזר AI',
+            text: '🚫 החשיבה הופסקה על ידי המשתמש.',
+            attachmentType: '',
+            attachmentUrl: '',
+            timestamp: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, cancelMsg]);
+        } else {
+          const errorMessage = String(error?.message || '').trim();
+          const errorMsg = {
+            id: `ai-error-${Date.now()}`,
+            senderId: 'ai-assistant',
+            senderName: '🤖 עוזר AI',
+            text: `⚠️ שגיאה: ${errorMessage || 'לא ניתן לקבל תשובה כרגע. נסה שוב.'}`,
+            attachmentType: '',
+            attachmentUrl: '',
+            timestamp: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, errorMsg]);
+        }
+      } finally {
+        abortControllerRef.current = null;
+        setIsSending(false);
+        setIsTyping(false);
+      }
+
+      return;
+    }
+
+    // ── LIVE CONVERSATION MODE ──
     if (hasLiveConversation) {
       if (!conversationId || isSending || isBootstrapping) {
         return;
@@ -970,6 +1380,7 @@ export default function ChatPage({ navigation, route }) {
         },
       ]);
       setInput('');
+      setTimeout(() => scrollToLatestMessage(true), 60);
 
       try {
         setIsSending(true);
@@ -1001,6 +1412,7 @@ export default function ChatPage({ navigation, route }) {
           const withoutPending = prev.filter((msg) => msg.id !== pendingMessageId);
           return [...withoutPending, newMsg];
         });
+        setTimeout(() => scrollToLatestMessage(true), 60);
 
         setTimeout(() => {
           void loadConversationMessages(conversationId);
@@ -1027,6 +1439,7 @@ export default function ChatPage({ navigation, route }) {
       return;
     }
 
+    // ── DEMO / FALLBACK MODE ──
     const newMsg = {
       id: String(Date.now()),
       senderId: currentUserId,
@@ -1037,6 +1450,7 @@ export default function ChatPage({ navigation, route }) {
 
     setMessages((prev) => [...prev, newMsg]);
     setInput('');
+    setTimeout(() => scrollToLatestMessage(true), 60);
 
     // Simulate typing indicator + auto-reply
     setTimeout(() => setIsTyping(true), 800);
@@ -1052,11 +1466,13 @@ export default function ChatPage({ navigation, route }) {
         timestamp: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, reply]);
+      setTimeout(() => scrollToLatestMessage(true), 60);
     }, 2500);
   }, [
     input,
     currentUserId,
     fromInstructor,
+    isAiChat,
     hasLiveConversation,
     conversationId,
     isSending,
@@ -1068,6 +1484,7 @@ export default function ChatPage({ navigation, route }) {
     parentId,
     mapApiMessageToUi,
     loadConversationMessages,
+    scrollToLatestMessage,
   ]);
 
   const handleSendAttachment = useCallback(async () => {
@@ -1113,6 +1530,7 @@ export default function ChatPage({ navigation, route }) {
         setMessages((prev) => [...prev, newAttachmentMessage]);
         setInput('');
         setPendingAttachment(null);
+        setTimeout(() => scrollToLatestMessage(true), 60);
 
         setTimeout(() => {
           void loadConversationMessages(conversationId);
@@ -1140,6 +1558,7 @@ export default function ChatPage({ navigation, route }) {
     setMessages((prev) => [...prev, newAttachmentMessage]);
     setInput('');
     setPendingAttachment(null);
+    setTimeout(() => scrollToLatestMessage(true), 60);
 
     setTimeout(() => setIsTyping(true), 800);
     setTimeout(() => {
@@ -1154,6 +1573,7 @@ export default function ChatPage({ navigation, route }) {
         timestamp: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, reply]);
+      setTimeout(() => scrollToLatestMessage(true), 60);
     }, 2500);
   }, [
     pendingAttachment,
@@ -1168,6 +1588,7 @@ export default function ChatPage({ navigation, route }) {
     mapApiMessageToUi,
     currentUserId,
     loadConversationMessages,
+    scrollToLatestMessage,
   ]);
 
   const currentLiveUserType = fromInstructor ? 'Instructor' : 'Parent';
@@ -1209,8 +1630,9 @@ export default function ChatPage({ navigation, route }) {
       item={item}
       isMe={item.senderId === currentUserId}
       onImagePress={openImageZoom}
+      onLongPress={handleLongPressMessage}
     />
-  ), [currentUserId, openImageZoom]);
+  ), [currentUserId, openImageZoom, handleLongPressMessage]);
 
   const keyExtractor = useCallback((item) => item.id, []);
 
@@ -1223,13 +1645,8 @@ export default function ChatPage({ navigation, route }) {
 
       {/* Surface Water */}
       <View style={StyleSheet.absoluteFill}>
-        <LinearGradient colors={["#00aed8", "#007fa7", "#004d73"]} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={["#00aed8", "#007fa7", "#004d73"]} style={{ flex: 1 }} />
       </View>
-
-      {/* Bubbles */}
-      {bubblePool.map((id) => (
-        <Bubble key={id} />
-      ))}
 
       {/* Waves */}
       <Wave
@@ -1247,26 +1664,41 @@ export default function ChatPage({ navigation, route }) {
 
       {/* NAVBAR */}
       <AnimatedBlurView intensity={20} tint="dark" style={[styles.navbar, { backgroundColor: navBg }]}>
-        <View style={styles.navLeftControls}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Text style={styles.backArrow}>→</Text>
-          </TouchableOpacity>
-          <LinearGradient colors={["#00d4ff", "#0099cc"]} style={styles.logoIcon}>
-            <Text style={styles.logoEmoji}>💬</Text>
-          </LinearGradient>
+        {/* 1. Back button on the far right under RTL */}
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} activeOpacity={0.75}>
+          <Text style={styles.backArrow}>›</Text>
+        </TouchableOpacity>
+
+        {/* 2. Title/Subtitle in the middle, aligned right next to the back button */}
+        <View style={styles.navTextWrap} pointerEvents="none">
+          <Text style={styles.logoText} numberOfLines={1} ellipsizeMode="tail">{headerTitleText}</Text>
+          {headerSubtitleText && (
+            <Text style={styles.navSubtitle} numberOfLines={1} ellipsizeMode="tail">{headerSubtitleText}</Text>
+          )}
         </View>
 
-        <View style={styles.navTextWrap}>
-          <Text style={styles.logoText}>צ'אט</Text>
-          <Text style={styles.navSubtitle}>{headerCounterpartLine}</Text>
-          <Text style={styles.navSubtitle}>{headerChildLine}</Text>
-        </View>
+        {/* 3. Clear chat button (only for AI chat) on the left */}
+        {isAiChat && (
+          <TouchableOpacity onPress={handleClearAiChat} style={styles.clearChatButton}>
+            <Text style={styles.clearChatButtonText}>נקה שיחה</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* 4. Chat Icon on the far left under RTL */}
+        <LinearGradient colors={isAiChat ? ["#00f2fe", "#0077aa"] : ["#00d4ff", "#0099cc"]} style={styles.logoIcon}>
+          <Text style={styles.logoEmoji}>{isAiChat ? '🤖' : '💬'}</Text>
+        </LinearGradient>
       </AnimatedBlurView>
 
       {/* CHAT CONTENT */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.chatArea}
+        style={[
+          styles.chatArea,
+          {
+            paddingTop: Platform.OS === 'ios' ? 80 : (StatusBar.currentHeight || 20) + 55
+          }
+        ]}
         keyboardVerticalOffset={0}
       >
         <FlatList
@@ -1278,62 +1710,96 @@ export default function ChatPage({ navigation, route }) {
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => scrollToLatestMessage(false)}
           onLayout={() => scrollToLatestMessage(false)}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          onMomentumScrollEnd={handleMomentumScrollEnd}
           ListFooterComponent={
-            !hasLiveConversation && isTyping ? (
+            isTyping ? (
               <Animated.View style={[styles.typingRow, { opacity: typingPulse }]}>
-                <LinearGradient colors={['#00d4ff', '#0077aa']} style={styles.typingAvatar}>
-                  <Text style={styles.typingAvatarText}>
-                    {fromInstructor ? 'ע' : 'ש'}
-                  </Text>
-                </LinearGradient>
                 <BlurView intensity={18} tint="dark" style={styles.typingBubble}>
                   <Text style={styles.typingDots}>...</Text>
-                  <Text style={styles.typingLabel}>מקליד/ה</Text>
+                  <Text style={styles.typingLabel}>{isAiChat ? 'חושב...' : 'מקליד/ה'}</Text>
                 </BlurView>
+                <LinearGradient colors={isAiChat ? ['#00f2fe', '#0077aa'] : ['#00d4ff', '#0077aa']} style={styles.typingAvatar}>
+                  <Text style={styles.typingAvatarText}>
+                    {isAiChat ? '🤖' : (fromInstructor ? 'ע' : 'ש')}
+                  </Text>
+                </LinearGradient>
               </Animated.View>
             ) : null
           }
         />
 
+        {/* Floating Scroll to Bottom button */}
+        <Animated.View
+          style={[
+            styles.scrollToBottomBtnWrap,
+            {
+              opacity: scrollToBottomOpacity,
+              transform: [
+                {
+                  translateY: scrollToBottomOpacity.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [15, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+          pointerEvents={showScrollToBottom ? 'auto' : 'none'}
+        >
+          <TouchableOpacity
+            style={styles.scrollToBottomBtn}
+            onPress={handleScrollToBottomPress}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.scrollToBottomBtnText}>↓</Text>
+          </TouchableOpacity>
+        </Animated.View>
+
         {/* INPUT BAR */}
         <BlurView intensity={30} tint="dark" style={styles.inputBar}>
-          <TouchableOpacity
-            onPress={openGalleryAttachment}
-            activeOpacity={0.82}
-            disabled={isSending || isBootstrapping || (hasLiveConversation && !conversationId)}
-          >
-            <LinearGradient
-              colors={
-                isSending || isBootstrapping || (hasLiveConversation && !conversationId)
-                  ? ['rgba(0,212,255,0.3)', 'rgba(0,153,204,0.3)']
-                  : ['#00d4ff', '#0099cc']
-              }
-              style={styles.galleryBtn}
+          {!isAiChat && (
+            <TouchableOpacity
+              onPress={openGalleryAttachment}
+              activeOpacity={0.82}
+              disabled={isSending || isBootstrapping || (hasLiveConversation && !conversationId)}
             >
-              <Text style={styles.galleryBtnIcon}>🖼️</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+              <LinearGradient
+                colors={
+                  isSending || isBootstrapping || (hasLiveConversation && !conversationId)
+                    ? ['rgba(0,212,255,0.3)', 'rgba(0,153,204,0.3)']
+                    : ['#00d4ff', '#0099cc']
+                }
+                style={styles.galleryBtn}
+              >
+                <Text style={styles.galleryBtnIcon}>🖼️</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
 
-          <TouchableOpacity
-            onPress={openCameraAttachment}
-            activeOpacity={0.82}
-            disabled={isSending || isBootstrapping || (hasLiveConversation && !conversationId)}
-          >
-            <LinearGradient
-              colors={
-                isSending || isBootstrapping || (hasLiveConversation && !conversationId)
-                  ? ['rgba(0,212,255,0.3)', 'rgba(0,153,204,0.3)']
-                  : ['#00d4ff', '#0099cc']
-              }
-              style={styles.cameraBtn}
+          {!isAiChat && (
+            <TouchableOpacity
+              onPress={openCameraAttachment}
+              activeOpacity={0.82}
+              disabled={isSending || isBootstrapping || (hasLiveConversation && !conversationId)}
             >
-              <Text style={styles.cameraBtnIcon}>📷</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+              <LinearGradient
+                colors={
+                  isSending || isBootstrapping || (hasLiveConversation && !conversationId)
+                    ? ['rgba(0,212,255,0.3)', 'rgba(0,153,204,0.3)']
+                    : ['#00d4ff', '#0099cc']
+                }
+                style={styles.cameraBtn}
+              >
+                <Text style={styles.cameraBtnIcon}>📷</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
 
           <TextInput
-            style={styles.input}
-            placeholder="כתבו הודעה..."
+            style={[styles.input, isAiChat && { flex: 1 }]}
+            placeholder={isAiChat ? 'שאל את ה-AI...' : 'כתבו הודעה...'}
             placeholderTextColor="rgba(255,255,255,0.4)"
             value={input}
             onChangeText={setInput}
@@ -1342,19 +1808,33 @@ export default function ChatPage({ navigation, route }) {
             editable={!isBootstrapping && !(hasLiveConversation && !conversationId)}
           />
           <TouchableOpacity
-            onPress={handleSend}
+            onPress={isAiChat && isSending ? handleStopThinking : handleSend}
             activeOpacity={0.8}
-            disabled={!input.trim() || isSending || isBootstrapping || (hasLiveConversation && !conversationId)}
+            disabled={
+              (!isAiChat && isSending) ||
+              (!input.trim() && !isSending) ||
+              isBootstrapping ||
+              (hasLiveConversation && !conversationId)
+            }
           >
             <LinearGradient
               colors={
-                input.trim() && !isSending && !isBootstrapping
-                  ? ['#00d4ff', '#0099cc']
-                  : ['rgba(0,212,255,0.3)', 'rgba(0,153,204,0.3)']
+                isAiChat && isSending
+                  ? ['#ff4e50', '#ff3366']
+                  : (input.trim() || isSending) && !isBootstrapping
+                    ? ['#00d4ff', '#0099cc']
+                    : ['rgba(0,212,255,0.3)', 'rgba(0,153,204,0.3)']
               }
-              style={styles.sendBtn}
+              style={[
+                styles.sendBtn,
+                isAiChat && isSending && { width: 44, height: 44, borderRadius: 22, paddingHorizontal: 0, paddingVertical: 0 }
+              ]}
             >
-              <Text style={styles.sendBtnText}>{isSending ? 'שולח...' : 'שליחה'}</Text>
+              {isAiChat && isSending ? (
+                <View style={{ width: 14, height: 14, backgroundColor: '#fff', borderRadius: 2 }} />
+              ) : (
+                <Text style={styles.sendBtnText}>{isSending ? 'שולח...' : 'שליחה'}</Text>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </BlurView>
@@ -1467,12 +1947,11 @@ const styles = StyleSheet.create({
   waveContainer: {
     position: "absolute",
     bottom: 0,
-    left: 0,
+    left: (width - 2400) / 2,
     width: 2400,
     height: 150,
     zIndex: 0,
   },
-  bubbleWrapper: { position: "absolute", zIndex: 1 },
 
   // --- NAVBAR ---
   navbar: {
@@ -1530,7 +2009,7 @@ const styles = StyleSheet.create({
   // --- MESSAGES ---
   messagesContainer: {
     paddingHorizontal: 16,
-    paddingTop: 10,
+    paddingTop: 35,
     paddingBottom: 10,
   },
   msgRow: {
@@ -1539,10 +2018,10 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   msgRowRight: {
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
   },
   msgRowLeft: {
-    justifyContent: 'flex-start',
+    justifyContent: 'flex-end',
   },
   msgAvatar: {
     width: 32,
@@ -1575,11 +2054,28 @@ const styles = StyleSheet.create({
   msgBubbleOther: {
     borderBottomLeftRadius: 6,
   },
+  msgBubbleAI: {
+    borderBottomLeftRadius: 6,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 242, 254, 0.65)',
+    shadowColor: '#00f2fe',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
+  },
   msgSender: {
     color: '#00d4ff',
     fontSize: 12,
     fontWeight: '700',
     marginBottom: 4,
+    textAlign: 'right',
+  },
+  msgSenderAI: {
+    color: '#00e5ff',
+    fontWeight: '800',
+    fontSize: 13,
+    marginBottom: 6,
     textAlign: 'right',
   },
   msgText: {
@@ -1588,6 +2084,99 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: 'right',
     writingDirection: 'rtl',
+  },
+  msgTextBold: {
+    fontWeight: '700',
+    color: '#00e5ff',
+  },
+  numberedLineContainer: {
+    flexDirection: 'row-reverse',
+    alignItems: 'flex-start',
+    marginVertical: 4,
+    paddingRight: 4,
+    width: '100%',
+    gap: 8,
+  },
+  numberBadge: {
+    backgroundColor: 'rgba(0, 212, 255, 0.2)',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  aiNumberBadge: {
+    backgroundColor: 'rgba(0, 229, 255, 0.25)',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  numberText: {
+    color: '#00d4ff',
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  aiNumberText: {
+    color: '#00e5ff',
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  numberedLineText: {
+    flex: 1,
+    color: '#f8fafc',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    direction: 'rtl',
+  },
+  bulletLineContainer: {
+    flexDirection: 'row-reverse',
+    alignItems: 'flex-start',
+    marginVertical: 3,
+    paddingRight: 6,
+    width: '100%',
+    gap: 8,
+  },
+  bulletDot: {
+    color: '#00d4ff',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  aiBulletDot: {
+    color: '#00e5ff',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  bulletLineText: {
+    flex: 1,
+    color: '#f8fafc',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    direction: 'rtl',
+  },
+  msgParagraph: {
+    color: '#f8fafc',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    alignSelf: 'stretch',
+    width: '100%',
   },
   msgAttachmentWrap: {
     borderRadius: 14,
@@ -1642,7 +2231,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingTop: Platform.OS === 'ios' ? 90 : (StatusBar.currentHeight || 20) + 54,
+    paddingTop: Platform.OS === 'ios' ? 75 : (StatusBar.currentHeight || 20) + 48,
     paddingBottom: 26,
   },
   imageZoomImageWrap: {
@@ -1718,6 +2307,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingLeft: 0,
     marginBottom: 10,
+    justifyContent: 'flex-end',
   },
   typingAvatar: {
     width: 28,
@@ -1725,7 +2315,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginHorizontal: 8,
   },
   typingAvatarText: {
     color: '#fff',
@@ -1889,6 +2479,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     writingDirection: 'rtl',
+  },
+  clearChatButton: {
+    marginHorizontal: 12,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.4)',
+    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+  },
+  clearChatButtonText: {
+    color: '#00d4ff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  scrollToBottomBtnWrap: {
+    position: 'absolute',
+    bottom: 80,
+    right: 20,
+    zIndex: 99,
+  },
+  scrollToBottomBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(0, 21, 41, 0.85)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 212, 255, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#00f2fe',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  scrollToBottomBtnText: {
+    color: '#00f2fe',
+    fontSize: 22,
+    fontWeight: 'bold',
   },
 });
 

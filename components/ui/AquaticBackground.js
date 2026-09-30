@@ -1,161 +1,79 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Animated, Dimensions, Easing, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-const sharedVariant = {
-  baseGradient: ['#005a80', '#00456a', colors.bgDeep],
-  overlayGradient: ['#00aed8', '#007fa7', '#004d73'],
-  bubble: 'rgba(255, 255, 255, 0.18)',
-  waveBack: 'rgba(0, 153, 204, 0.3)',
-  waveFront: 'rgba(0, 212, 255, 0.25)',
-};
-
-const variants = {
-  manager: sharedVariant,
-  instructor: sharedVariant,
-  parent: sharedVariant,
-  auth: sharedVariant,
-};
-
-function Bubble({ color, delay, left, size, duration }) {
-  const progress = useRef(new Animated.Value(0)).current;
-  const sway = useRef(new Animated.Value(0)).current;
+const Wave = ({ color, duration, startPosition, d }) => {
+  const translateX = useRef(new Animated.Value(startPosition)).current;
 
   useEffect(() => {
-    const floatAnim = Animated.loop(
+    const toPosition = startPosition === 0 ? -600 : 0;
+
+    Animated.loop(
       Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(progress, {
-          toValue: 1,
-          duration,
-          easing: Easing.linear,
+        Animated.timing(translateX, {
+          toValue: toPosition,
+          duration: duration / 2,
+          easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
-        Animated.timing(progress, {
-          toValue: 0,
-          duration: 0,
+        Animated.timing(translateX, {
+          toValue: startPosition,
+          duration: duration / 2,
+          easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
       ]),
-    );
-
-    const swayAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(sway, { toValue: 1, duration: 1800, useNativeDriver: true }),
-        Animated.timing(sway, { toValue: -1, duration: 2600, useNativeDriver: true }),
-        Animated.timing(sway, { toValue: 0, duration: 1800, useNativeDriver: true }),
-      ]),
-    );
-
-    floatAnim.start();
-    swayAnim.start();
-
-    return () => {
-      progress.stopAnimation();
-      sway.stopAnimation();
-    };
-  }, [delay, duration, progress, sway]);
-
-  const translateY = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [height + 50, -120],
-  });
-
-  const opacity = progress.interpolate({
-    inputRange: [0, 0.12, 0.85, 1],
-    outputRange: [0, 0.9, 0.7, 0],
-  });
-
-  const translateX = sway.interpolate({
-    inputRange: [-1, 1],
-    outputRange: [-14, 14],
-  });
+    ).start();
+  }, [duration, startPosition, translateX]);
 
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        styles.bubble,
-        {
-          left,
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: color,
-          transform: [{ translateY }, { translateX }],
-          opacity,
-        },
-      ]}
-    />
+    <Animated.View style={[styles.waveContainer, { transform: [{ translateX }] }]}> 
+      <Svg width={2400} height={150} viewBox="0 0 2400 150" preserveAspectRatio="none">
+        <Path fill={color} d={d} />
+      </Svg>
+    </Animated.View>
   );
-}
+};
 
-export default function AquaticBackground({ variant = 'manager', showWaves = true }) {
-  const theme = variants[variant] || variants.manager;
-  const bubbles = useMemo(
-    () =>
-      Array.from({ length: 8 }).map((_, index) => ({
-        id: `bubble-${index}`,
-        left: Math.random() * width,
-        size: 10 + Math.random() * 22,
-        delay: Math.floor(Math.random() * 12000),
-        duration: 12000 + Math.floor(Math.random() * 8000),
-      })),
-    [],
-  );
-
+export default function AquaticBackground() {
   return (
     <>
-      <LinearGradient colors={theme.baseGradient} style={StyleSheet.absoluteFill} />
+      {/* Deep Ocean Base */}
+      <LinearGradient colors={['#005a80', '#00456a', colors.bgDeep]} style={StyleSheet.absoluteFill} />
 
+      {/* Surface Water */}
       <View style={StyleSheet.absoluteFill}>
-        <LinearGradient colors={theme.overlayGradient} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={['#00aed8', '#007fa7', '#004d73']} style={{ flex: 1 }} />
       </View>
 
-      {showWaves ? (
-        <>
-          <View pointerEvents="none" style={[styles.waveBack, { backgroundColor: theme.waveBack }]} />
-          <View pointerEvents="none" style={[styles.waveFront, { backgroundColor: theme.waveFront }]} />
-        </>
-      ) : null}
-
-      {bubbles.map((bubble) => (
-        <Bubble
-          key={bubble.id}
-          color={theme.bubble}
-          left={bubble.left}
-          size={bubble.size}
-          delay={bubble.delay}
-          duration={bubble.duration}
-        />
-      ))}
+      {/* Bottom Waves */}
+      <Wave
+        color="rgba(0, 153, 204, 0.3)"
+        duration={8000}
+        startPosition={0}
+        d="M0,75 C200,45 400,105 600,75 C800,45 1000,105 1200,75 L1200,150 L0,150 Z M1200,75 C1400,45 1600,105 1800,75 C2000,45 2200,105 2400,75 L2400,150 L1200,150 Z"
+      />
+      <Wave
+        color="rgba(0, 212, 255, 0.25)"
+        duration={6000}
+        startPosition={-600}
+        d="M0,100 C300,60 500,130 800,90 C1000,60 1100,120 1200,100 L1200,150 L0,150 Z M1200,100 C1500,60 1700,130 2000,90 C2200,60 2300,120 2400,100 L2400,150 L1200,150 Z"
+      />
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  waveBack: {
+  waveContainer: {
     position: 'absolute',
-    top: 84,
-    left: -28,
-    right: -28,
-    height: 92,
-    borderRadius: 90,
-  },
-  waveFront: {
-    position: 'absolute',
-    top: 102,
-    left: -18,
-    right: -18,
-    height: 82,
-    borderRadius: 90,
-  },
-  bubble: {
-    position: 'absolute',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
+    bottom: 0,
+    left: (width - 2400) / 2,
+    width: 2400,
+    height: 150,
+    zIndex: 0,
   },
 });

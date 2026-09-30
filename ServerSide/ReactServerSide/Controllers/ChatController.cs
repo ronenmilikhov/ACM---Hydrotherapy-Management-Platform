@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Linq;
+using System.Collections.Generic;
 using ReactServerSide.DAL;
 using System.IO;
 using System.Net.Http.Headers;
@@ -747,6 +749,950 @@ namespace ReactServerSide.Controllers
             public string Type { get; set; } = string.Empty;
             public string Url { get; set; } = string.Empty;
             public string Caption { get; set; } = string.Empty;
+        }
+
+
+        // ==========================================
+        //             AI Chat Endpoints
+        // ==========================================
+
+        public class ChatRequest
+        {
+            public string MessageText { get; set; } = string.Empty;
+            public List<ChatHistoryItem>? History { get; set; }
+        }
+
+        public class ChatHistoryItem
+        {
+            public string SenderType { get; set; } = string.Empty; // "User" or "AI"
+            public string MessageText { get; set; } = string.Empty;
+        }
+
+        public class FunctionCall
+        {
+            public string Function { get; set; } = string.Empty;
+            public Dictionary<string, JsonElement>? Arguments { get; set; }
+        }
+
+        [HttpPost("instructor/{instructorId:int}/ai-chat")]
+        public async Task<IActionResult> InstructorAIChat(int instructorId, [FromBody] ChatRequest request)
+        {
+            try
+            {
+                if (request == null || string.IsNullOrWhiteSpace(request.MessageText))
+                {
+                    return BadRequest("Message cannot be empty.");
+                }
+
+                if (!_db.GetInstructorExists(instructorId))
+                {
+                    return NotFound("Instructor not found.");
+                }
+
+                string userMessage = request.MessageText;
+
+                // 1. Save user message to database history
+                _db.SaveAIChatMessage(instructorId, "user", userMessage);
+
+                // Fetch context data
+                var groups = _db.GetGroupsForInstructor(instructorId);
+                var childrenByGroup = _db.GetChildrenByGroupsForInstructor(instructorId);
+                var children = childrenByGroup.SelectMany(g => g.Children).ToList();
+                var instructors = _db.GetInstructorsForManager();
+
+                var matchedChildIds = new HashSet<int>();
+                var matchedGroupIds = new HashSet<int>();
+                var matchedInstructorIds = new HashSet<int>();
+
+                // Detect matches
+                foreach (var c in children)
+                {
+                    if (userMessage.Contains(c.FullName, StringComparison.OrdinalIgnoreCase) ||
+                        (!string.IsNullOrEmpty(c.FirstName) && userMessage.Contains(c.FirstName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        matchedChildIds.Add(c.ChildId);
+                    }
+                }
+
+                foreach (var g in groups)
+                {
+                    if (userMessage.Contains(g.Name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matchedGroupIds.Add(g.GroupId);
+                    }
+                }
+
+                foreach (var inst in instructors)
+                {
+                    if (userMessage.Contains(inst.FullName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matchedInstructorIds.Add(inst.InstructorId);
+                    }
+                }
+
+                List<ChildReportRecord> reports = new List<ChildReportRecord>();
+                List<InstructorTrainingSessionViewRecord> sessionsList = new List<InstructorTrainingSessionViewRecord>();
+                List<object> childrenList = new List<object>();
+                List<object> groupsSummariesList = new List<object>();
+                List<object> parentsContactList = new List<object>();
+                List<object> instructorsSummariesList = new List<object>();
+                List<object> reportsForPrompt = new List<object>();
+
+                // ALWAYS populate summaries to give the chatbot persistent school context
+                var allChildIds = children.Select(c => c.ChildId).ToList();
+                var allReports = _db.GetChildReportsForChildren(allChildIds);
+                var childReportsMap = allReports.GroupBy(r => r.ChildId).ToDictionary(g => g.Key, g => g.ToList());
+                var groupReportsMap = allReports.Where(r => r.GroupId.HasValue).GroupBy(r => r.GroupId.Value).ToDictionary(g => g.Key, g => g.ToList());
+                var instructorReportsMap = allReports.GroupBy(r => r.InstructorId).ToDictionary(g => g.Key, g => g.ToList());
+
+                var allGroups = _db.GetGroupsForManagement(true);
+                var groupsByInstructor = allGroups
+                    .Where(g => g.InstructorId.HasValue)
+                    .GroupBy(g => g.InstructorId.Value)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                // Query GroupChildren for active group assignments
+                var gcScan = _db.DynamoDbClient.ScanAsync(new Amazon.DynamoDBv2.Model.ScanRequest { TableName = "GroupChildren" }).GetAwaiter().GetResult();
+                var activeGroupIdsByChild = new Dictionary<int, List<int>>();
+                foreach (var item in gcScan.Items)
+                {
+                    bool isActive = item.ContainsKey("IsActive") && item["IsActive"].BOOL == true;
+                    if (isActive && item.ContainsKey("ChildId") && int.TryParse(item["ChildId"].N, out int cId) &&
+                        item.ContainsKey("GroupId") && int.TryParse(item["GroupId"].N, out int gId))
+                    {
+                        if (!activeGroupIdsByChild.ContainsKey(cId))
+                        {
+                            activeGroupIdsByChild[cId] = new List<int>();
+                        }
+                        activeGroupIdsByChild[cId].Add(gId);
+                    }
+                }
+
+                foreach (var c in children)
+                {
+                    List<ChildReportRecord> cReports = childReportsMap.TryGetValue(c.ChildId, out var rList) ? rList : new List<ChildReportRecord>();
+                    double overallAverageScore = CalculateAverageScoreFromReports(cReports);
+                    int totalReports = cReports.Count;
+                    int presentLessons = cReports.Count(r => r.IsPresent);
+                    double attendanceRate = totalReports > 0 ? Math.Round((presentLessons * 100.0) / totalReports, 0) : 0;
+                    var childMetricAverages = CalculateMetricAveragesForChild(cReports);
+
+                    var childGroupIds = activeGroupIdsByChild.TryGetValue(c.ChildId, out var gIds) ? gIds : new List<int>();
+                    var childGroupsList = childGroupIds
+                        .Select(gid => new {
+                            groupId = gid,
+                            groupName = allGroups.FirstOrDefault(g => g.GroupId == gid)?.Name ?? "קבוצה לא ידועה"
+                        })
+                        .ToList();
+
+                    childrenList.Add(new
+                    {
+                        childId = c.ChildId,
+                        childName = c.FullName,
+                        parentFullName = c.ParentFullName,
+                        parentEmail = c.ParentEmail,
+                        activeGroupId = childGroupIds.FirstOrDefault(),
+                        activeGroupName = allGroups.FirstOrDefault(g => g.GroupId == childGroupIds.FirstOrDefault())?.Name ?? string.Empty,
+                        activeGroups = childGroupsList,
+                        overallAverageScore = overallAverageScore,
+                        metricAverages = childMetricAverages,
+                        totalReportsCount = totalReports,
+                        presentLessonsCount = presentLessons,
+                        attendanceRate = attendanceRate + "%"
+                    });
+                }
+
+                foreach (var g in groups)
+                {
+                    List<ChildReportRecord> gReports = groupReportsMap.TryGetValue(g.GroupId, out var rList) ? rList : new List<ChildReportRecord>();
+                    double overallAverageScore = CalculateAverageScoreFromReports(gReports);
+                    int totalReports = gReports.Count;
+                    int presentLessons = gReports.Count(r => r.IsPresent);
+                    double attendanceRate = totalReports > 0 ? Math.Round((presentLessons * 100.0) / totalReports, 0) : 0;
+                    var groupMetricAverages = CalculateMetricAveragesForChild(gReports);
+
+                    groupsSummariesList.Add(new
+                    {
+                        groupId = g.GroupId,
+                        groupName = g.Name,
+                        description = g.Description,
+                        activeChildrenCount = g.ActiveChildrenCount,
+                        overallAverageScore = overallAverageScore,
+                        metricAverages = groupMetricAverages,
+                        totalReportsCount = totalReports,
+                        attendanceRate = attendanceRate + "%"
+                    });
+                }
+
+                foreach (var inst in instructors)
+                {
+                    List<ChildReportRecord> instReports = instructorReportsMap.TryGetValue(inst.InstructorId, out var rList) ? rList : new List<ChildReportRecord>();
+                    double overallAverageScore = CalculateAverageScoreFromReports(instReports);
+                    int totalReports = instReports.Count;
+                    int presentLessons = instReports.Count(r => r.IsPresent);
+                    double attendanceRate = totalReports > 0 ? Math.Round((presentLessons * 100.0) / totalReports, 0) : 0;
+
+                    var instGroups = groupsByInstructor.TryGetValue(inst.InstructorId, out var gList) ? gList : new List<GroupSummaryRecord>();
+
+                    instructorsSummariesList.Add(new
+                    {
+                        instructorId = inst.InstructorId,
+                        instructorName = inst.FullName,
+                        email = inst.Email,
+                        activeGroupsCount = instGroups.Count,
+                        groupsList = instGroups.Select(g => g.Name).ToList(),
+                        overallAverageStudentScore = overallAverageScore,
+                        totalReportsCount = totalReports,
+                        studentAttendanceRate = attendanceRate + "%"
+                    });
+                }
+
+                foreach (var c in children)
+                {
+                    parentsContactList.Add(new
+                    {
+                        parentName = c.ParentFullName,
+                        email = c.ParentEmail,
+                        childName = c.FullName
+                    });
+                }
+
+                bool isDbQuery = IsDatabaseQuery(userMessage) 
+                    || matchedChildIds.Count > 0 
+                    || matchedGroupIds.Count > 0 
+                    || matchedInstructorIds.Count > 0;
+
+                if (isDbQuery)
+                {
+                    // STEP 1: Call Gemini to plan database query / choose functions
+                    string step1SystemPrompt = @"You are the Database Query Planner for a specialized swimming school management application.
+Your job is to analyze the user's query and decide which data-retrieval functions to call to gather the RAW data needed for the final response.
+
+ALWAYS request RAW chronological records (reports, attendance, metrics) when the user asks for comparisons, trends, progress, or performance analysis.
+Do NOT assume the server will pre-calculate averages, velocities, or trends. You need the raw data points to perform these calculations yourself.
+When the query is about progress, trends, or comparisons over time, increase the 'limit' parameter (e.g. set to 15, 30, or 50) to ensure a complete dataset.
+
+Available Functions:
+1. get_child_reports(childIds: int[], limit: int): Retrieve raw progress reports for specific children.
+2. get_group_reports(groupIds: int[], limit: int): Retrieve raw progress reports for entire groups/classes.
+3. get_child_sessions(childIds: int[]): Retrieve scheduled lessons and meetings.
+
+Return ONLY a JSON array of function calls (e.g. [ { ""function"": ""get_child_reports"", ""arguments"": { ""childIds"": [1], ""limit"": 30 } } ]). Do not include markdown code blocks or text outside the JSON.";
+
+                    string step1Response = await CallGeminiAsync(step1SystemPrompt, userMessage, request.History);
+                    
+                    // Clean step 1 response (remove markdown code blocks if any)
+                    step1Response = CleanJsonText(step1Response);
+
+                    List<FunctionCall>? calls = null;
+                    try
+                    {
+                        calls = JsonSerializer.Deserialize<List<FunctionCall>>(step1Response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    }
+                    catch { /* Fallback to default manual matching if parsing fails */ }
+
+                    if (calls != null && calls.Count > 0)
+                    {
+                        foreach (var call in calls)
+                        {
+                            if (string.Equals(call.Function, "get_child_reports", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var childIds = GetIdsFromArgs(call.Arguments, "childIds");
+                                int limit = GetLimitFromArgs(call.Arguments, 30);
+                                if (childIds.Count > 0)
+                                {
+                                    var fetched = _db.GetChildReportsForChildren(childIds).Take(limit).ToList();
+                                    reports.AddRange(fetched);
+                                }
+                            }
+                            else if (string.Equals(call.Function, "get_group_reports", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var groupIds = GetIdsFromArgs(call.Arguments, "groupIds");
+                                int limit = GetLimitFromArgs(call.Arguments, 30);
+                                foreach (var gid in groupIds)
+                                {
+                                    var childIdsInGroup = childrenByGroup.FirstOrDefault(g => g.GroupId == gid)?.Children.Select(c => c.ChildId).ToList();
+                                    if (childIdsInGroup != null && childIdsInGroup.Count > 0)
+                                    {
+                                        var fetched = _db.GetChildReportsForChildren(childIdsInGroup).Take(limit).ToList();
+                                        reports.AddRange(fetched);
+                                    }
+                                }
+                            }
+                            else if (string.Equals(call.Function, "get_child_sessions", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var childIds = GetIdsFromArgs(call.Arguments, "childIds");
+                                if (childIds.Count > 0)
+                                {
+                                    var allSessions = _db.GetInstructorTrainingSessions(instructorId, DateTime.Today.AddYears(-1), DateTime.Today.AddYears(1));
+                                    var matched = allSessions.Where(s => childIds.Contains(s.ChildId)).ToList();
+                                    sessionsList.AddRange(matched);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Fallback / Auto-resolution if lists are still empty
+                if (reports.Count == 0 && matchedChildIds.Count > 0)
+                {
+                    reports.AddRange(_db.GetChildReportsForChildren(matchedChildIds.ToList()).Take(30));
+                }
+
+                if (reports.Count == 0 && matchedGroupIds.Count > 0)
+                {
+                    foreach (var gid in matchedGroupIds)
+                    {
+                        var childIdsInGroup = childrenByGroup.FirstOrDefault(g => g.GroupId == gid)?.Children.Select(c => c.ChildId).ToList();
+                        if (childIdsInGroup != null && childIdsInGroup.Count > 0)
+                        {
+                            reports.AddRange(_db.GetChildReportsForChildren(childIdsInGroup).Take(30));
+                        }
+                    }
+                }
+
+                if (sessionsList.Count == 0 && matchedChildIds.Count > 0)
+                {
+                    var allSessions = _db.GetInstructorTrainingSessions(instructorId, DateTime.Today.AddYears(-1), DateTime.Today.AddYears(1));
+                    var matched = allSessions.Where(s => matchedChildIds.Contains(s.ChildId)).ToList();
+                    sessionsList.AddRange(matched);
+                }
+
+                // STEP 2: Conversational response generation
+                string instructorName = instructors.FirstOrDefault(i => i.InstructorId == instructorId)?.FullName ?? "המדריך";
+
+                reportsForPrompt = reports.Select(r => new
+                {
+                    childName = children.FirstOrDefault(c => c.ChildId == r.ChildId)?.FullName,
+                    reportDate = r.ReportDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    isPresent = r.IsPresent,
+                    comment = r.Comment,
+                    metrics = r.Metrics
+                }).Cast<object>().ToList();
+
+                string childrenJson = childrenList.Count > 0 ? JsonSerializer.Serialize(childrenList) : "[]";
+                string reportsJson = reportsForPrompt.Count > 0 ? JsonSerializer.Serialize(reportsForPrompt) : "[]";
+                string sessionsJson = JsonSerializer.Serialize(sessionsList);
+                string parentsContactJson = JsonSerializer.Serialize(parentsContactList);
+                string groupsSummariesJson = groupsSummariesList.Count > 0 ? JsonSerializer.Serialize(groupsSummariesList) : "[]";
+                string instructorsSummariesJson = instructorsSummariesList.Count > 0 ? JsonSerializer.Serialize(instructorsSummariesList) : "[]";
+
+                string systemPrompt2 = $@"You are the Senior Data Analyst and Advanced Comparison Engine built into an hydrotherapy swimming school management application.
+Answer the user's query in HEBREW using the provided database context below.
+
+Details about the instructor, children, groups, and reports are loaded:
+- Instructor Name: {instructorName}
+- Children List: {childrenJson}
+- Progress Reports: {reportsJson}
+- Scheduled Lessons: {sessionsJson}
+- Group Summaries: {groupsSummariesJson}
+- Instructor Summaries: {instructorsSummariesJson}
+- Parent Contacts: {parentsContactJson}
+
+You must execute all required statistical and logical calculations internally:
+1. Averages: Calculate overall averages and specific metric averages (1-5 scale) from the raw progress reports.
+2. Attendance Rates: Calculate attendance rate as: (Present Lessons / Total Lessons) * 100%.
+3. Progress Velocity & Trend: Compare the average score of the first 20% of chronological lessons (baseline) with the last 20% of lessons (current). Define trend: 'שיפור משמעותי' (Improvement > 15%), 'יציבות' (Stagnation), or 'נסיגה' (Decline).
+
+Formatting Rules:
+- Markdown Tables: When comparing multiple children, groups, or metrics, you MUST present them in a clear Markdown table (e.g. name | overall average | attendance | lead metric).
+- Bullet Points: For key insights.
+- Bottom Line: Conclude with a brief 2-3 sentence executive summary.
+
+Read-Only Mode: You cannot modify or write any database records. 
+Do not mention function names, JSON, database, or API structures in your response. Speak naturally as a professional hydrotherapy expert.";
+
+                string finalResponse = await CallGeminiAsync(systemPrompt2, userMessage, request.History);
+
+                // Save assistant message to database history
+                _db.SaveAIChatMessage(instructorId, "ai", finalResponse);
+
+                return Ok(new { response = finalResponse });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = $"Error processing AI chat: {ex.Message}" });
+            }
+        }
+
+        [HttpPost("manager/{managerId:int}/ai-chat")]
+        public async Task<IActionResult> ManagerAIChat(int managerId, [FromBody] ChatRequest request)
+        {
+            try
+            {
+                if (request == null || string.IsNullOrWhiteSpace(request.MessageText))
+                {
+                    return BadRequest("Message cannot be empty.");
+                }
+
+                var instructors = _db.GetInstructorsForManager();
+
+                string userMessage = request.MessageText;
+
+                // 1. Save user message to database history
+                _db.SaveAIChatMessage(managerId, "user", userMessage);
+
+                // Fetch context data
+                var groups = _db.GetGroupsForManagement(true);
+                var children = _db.GetChildrenForGroupManagement(true);
+                var parents = _db.GetParentsForManager();
+
+                var matchedChildIds = new HashSet<int>();
+                var matchedGroupIds = new HashSet<int>();
+                var matchedInstructorIds = new HashSet<int>();
+
+                // Detect matches
+                foreach (var c in children)
+                {
+                    if (userMessage.Contains(c.FullName, StringComparison.OrdinalIgnoreCase) ||
+                        (!string.IsNullOrEmpty(c.FirstName) && userMessage.Contains(c.FirstName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        matchedChildIds.Add(c.ChildId);
+                    }
+                }
+
+                foreach (var g in groups)
+                {
+                    if (userMessage.Contains(g.Name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matchedGroupIds.Add(g.GroupId);
+                    }
+                }
+
+                foreach (var inst in instructors)
+                {
+                    if (userMessage.Contains(inst.FullName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matchedInstructorIds.Add(inst.InstructorId);
+                    }
+                }
+
+                List<ChildReportRecord> reports = new List<ChildReportRecord>();
+                List<InstructorTrainingSessionViewRecord> sessionsList = new List<InstructorTrainingSessionViewRecord>();
+                List<object> childrenList = new List<object>();
+                List<object> groupsSummariesList = new List<object>();
+                List<object> parentsContactList = new List<object>();
+                List<object> instructorsSummariesList = new List<object>();
+                List<object> reportsForPrompt = new List<object>();
+
+                // ALWAYS populate summaries to give the chatbot persistent school context
+                var allChildIds = children.Select(c => c.ChildId).ToList();
+                var allReports = _db.GetChildReportsForChildren(allChildIds);
+                var childReportsMap = allReports.GroupBy(r => r.ChildId).ToDictionary(g => g.Key, g => g.ToList());
+                var groupReportsMap = allReports.Where(r => r.GroupId.HasValue).GroupBy(r => r.GroupId.Value).ToDictionary(g => g.Key, g => g.ToList());
+                var instructorReportsMap = allReports.GroupBy(r => r.InstructorId).ToDictionary(g => g.Key, g => g.ToList());
+
+                var groupsByInstructor = groups
+                    .Where(g => g.InstructorId.HasValue)
+                    .GroupBy(g => g.InstructorId.Value)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                // Query GroupChildren for active group assignments
+                var gcScan = _db.DynamoDbClient.ScanAsync(new Amazon.DynamoDBv2.Model.ScanRequest { TableName = "GroupChildren" }).GetAwaiter().GetResult();
+                var activeGroupIdsByChild = new Dictionary<int, List<int>>();
+                foreach (var item in gcScan.Items)
+                {
+                    bool isActive = item.ContainsKey("IsActive") && item["IsActive"].BOOL == true;
+                    if (isActive && item.ContainsKey("ChildId") && int.TryParse(item["ChildId"].N, out int cId) &&
+                        item.ContainsKey("GroupId") && int.TryParse(item["GroupId"].N, out int gId))
+                    {
+                        if (!activeGroupIdsByChild.ContainsKey(cId))
+                        {
+                            activeGroupIdsByChild[cId] = new List<int>();
+                        }
+                        activeGroupIdsByChild[cId].Add(gId);
+                    }
+                }
+
+                foreach (var c in children)
+                {
+                    List<ChildReportRecord> cReports = childReportsMap.TryGetValue(c.ChildId, out var rList) ? rList : new List<ChildReportRecord>();
+                    double overallAverageScore = CalculateAverageScoreFromReports(cReports);
+                    int totalReports = cReports.Count;
+                    int presentLessons = cReports.Count(r => r.IsPresent);
+                    double attendanceRate = totalReports > 0 ? Math.Round((presentLessons * 100.0) / totalReports, 0) : 0;
+                    var childMetricAverages = CalculateMetricAveragesForChild(cReports);
+
+                    var childGroupIds = activeGroupIdsByChild.TryGetValue(c.ChildId, out var gIds) ? gIds : new List<int>();
+                    var childGroupsList = childGroupIds
+                        .Select(gid => new {
+                            groupId = gid,
+                            groupName = groups.FirstOrDefault(g => g.GroupId == gid)?.Name ?? "קבוצה לא ידועה"
+                        })
+                        .ToList();
+
+                    childrenList.Add(new
+                    {
+                        childId = c.ChildId,
+                        childName = c.FullName,
+                        activeGroupId = childGroupIds.FirstOrDefault(),
+                        activeGroupName = groups.FirstOrDefault(g => g.GroupId == childGroupIds.FirstOrDefault())?.Name ?? string.Empty,
+                        activeGroups = childGroupsList,
+                        overallAverageScore = overallAverageScore,
+                        metricAverages = childMetricAverages,
+                        totalReportsCount = totalReports,
+                        presentLessonsCount = presentLessons,
+                        attendanceRate = attendanceRate + "%"
+                    });
+                }
+
+                foreach (var g in groups)
+                {
+                    List<ChildReportRecord> gReports = groupReportsMap.TryGetValue(g.GroupId, out var rList) ? rList : new List<ChildReportRecord>();
+                    double overallAverageScore = CalculateAverageScoreFromReports(gReports);
+                    int totalReports = gReports.Count;
+                    int presentLessons = gReports.Count(r => r.IsPresent);
+                    double attendanceRate = totalReports > 0 ? Math.Round((presentLessons * 100.0) / totalReports, 0) : 0;
+                    var groupMetricAverages = CalculateMetricAveragesForChild(gReports);
+
+                    groupsSummariesList.Add(new
+                    {
+                        groupId = g.GroupId,
+                        groupName = g.Name,
+                        description = g.Description,
+                        instructorName = g.InstructorFullName,
+                        activeChildrenCount = g.ActiveChildrenCount,
+                        overallAverageScore = overallAverageScore,
+                        metricAverages = groupMetricAverages,
+                        totalReportsCount = totalReports,
+                        attendanceRate = attendanceRate + "%"
+                    });
+                }
+
+                foreach (var inst in instructors)
+                {
+                    List<ChildReportRecord> instReports = instructorReportsMap.TryGetValue(inst.InstructorId, out var rList) ? rList : new List<ChildReportRecord>();
+                    double overallAverageScore = CalculateAverageScoreFromReports(instReports);
+                    int totalReports = instReports.Count;
+                    int presentLessons = instReports.Count(r => r.IsPresent);
+                    double attendanceRate = totalReports > 0 ? Math.Round((presentLessons * 100.0) / totalReports, 0) : 0;
+
+                    var instGroups = groupsByInstructor.TryGetValue(inst.InstructorId, out var gList) ? gList : new List<GroupSummaryRecord>();
+
+                    instructorsSummariesList.Add(new
+                    {
+                        instructorId = inst.InstructorId,
+                        instructorName = inst.FullName,
+                        email = inst.Email,
+                        activeGroupsCount = instGroups.Count,
+                        groupsList = instGroups.Select(g => g.Name).ToList(),
+                        overallAverageStudentScore = overallAverageScore,
+                        totalReportsCount = totalReports,
+                        studentAttendanceRate = attendanceRate + "%"
+                    });
+                }
+
+                foreach (var p in parents)
+                {
+                    parentsContactList.Add(new
+                    {
+                        parentName = p.FullName,
+                        email = p.Email,
+                        phone = p.Phone,
+                        children = p.ChildNames
+                    });
+                }
+
+                bool isDbQuery = IsDatabaseQuery(userMessage) 
+                    || matchedChildIds.Count > 0 
+                    || matchedGroupIds.Count > 0 
+                    || matchedInstructorIds.Count > 0;
+
+                if (isDbQuery)
+                {
+                    // STEP 1: Call Gemini to plan database query / choose functions
+                    string step1SystemPrompt = @"You are the Database Query Planner for a specialized swimming school management application.
+Your job is to analyze the user's query and decide which data-retrieval functions to call to gather the RAW data needed for the final response.
+
+ALWAYS request RAW chronological records (reports, attendance, metrics) when the user asks for comparisons, trends, progress, or performance analysis.
+Do NOT assume the server will pre-calculate averages, velocities, or trends. You need the raw data points to perform these calculations yourself.
+When the query is about progress, trends, or comparisons over time, increase the 'limit' parameter (e.g. set to 15, 30, or 50) to ensure a complete dataset.
+
+Available Functions:
+1. get_child_reports(childIds: int[], limit: int): Retrieve raw progress reports for specific children.
+2. get_group_reports(groupIds: int[], limit: int): Retrieve raw progress reports for entire groups/classes.
+3. get_child_sessions(childIds: int[]): Retrieve scheduled lessons and meetings.
+
+Return ONLY a JSON array of function calls (e.g. [ { ""function"": ""get_child_reports"", ""arguments"": { ""childIds"": [1], ""limit"": 30 } } ]). Do not include markdown code blocks or text outside the JSON.";
+
+                    string step1Response = await CallGeminiAsync(step1SystemPrompt, userMessage, request.History);
+                    step1Response = CleanJsonText(step1Response);
+
+                    List<FunctionCall>? calls = null;
+                    try
+                    {
+                        calls = JsonSerializer.Deserialize<List<FunctionCall>>(step1Response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    }
+                    catch { }
+
+                    if (calls != null && calls.Count > 0)
+                    {
+                        foreach (var call in calls)
+                        {
+                            if (string.Equals(call.Function, "get_child_reports", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var childIds = GetIdsFromArgs(call.Arguments, "childIds");
+                                int limit = GetLimitFromArgs(call.Arguments, 30);
+                                if (childIds.Count > 0)
+                                {
+                                    var fetched = _db.GetChildReportsForChildren(childIds).Take(limit).ToList();
+                                    reports.AddRange(fetched);
+                                }
+                            }
+                            else if (string.Equals(call.Function, "get_group_reports", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var groupIds = GetIdsFromArgs(call.Arguments, "groupIds");
+                                int limit = GetLimitFromArgs(call.Arguments, 30);
+                                foreach (var gid in groupIds)
+                                {
+                                    var childIdsInGroup = children.Where(c => c.ActiveGroupId == gid).Select(c => c.ChildId).ToList();
+                                    if (childIdsInGroup.Count > 0)
+                                    {
+                                        var fetched = _db.GetChildReportsForChildren(childIdsInGroup).Take(limit).ToList();
+                                        reports.AddRange(fetched);
+                                    }
+                                }
+                            }
+                            else if (string.Equals(call.Function, "get_child_sessions", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var childIds = GetIdsFromArgs(call.Arguments, "childIds");
+                                if (childIds.Count > 0)
+                                {
+                                    foreach (var inst in instructors)
+                                    {
+                                        var instSessions = _db.GetInstructorTrainingSessions(inst.InstructorId, DateTime.Today.AddYears(-1), DateTime.Today.AddYears(1));
+                                        var matched = instSessions.Where(s => childIds.Contains(s.ChildId)).ToList();
+                                        sessionsList.AddRange(matched);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Fallback / Auto-resolution if lists are still empty
+                if (reports.Count == 0 && matchedChildIds.Count > 0)
+                {
+                    reports.AddRange(_db.GetChildReportsForChildren(matchedChildIds.ToList()).Take(30));
+                }
+
+                if (reports.Count == 0 && matchedGroupIds.Count > 0)
+                {
+                    foreach (var gid in matchedGroupIds)
+                    {
+                        var childIdsInGroup = children.Where(c => c.ActiveGroupId == gid).Select(c => c.ChildId).ToList();
+                        if (childIdsInGroup.Count > 0)
+                        {
+                            reports.AddRange(_db.GetChildReportsForChildren(childIdsInGroup).Take(30));
+                        }
+                    }
+                }
+
+                if (sessionsList.Count == 0 && matchedChildIds.Count > 0)
+                {
+                    foreach (var inst in instructors)
+                    {
+                        var instSessions = _db.GetInstructorTrainingSessions(inst.InstructorId, DateTime.Today.AddYears(-1), DateTime.Today.AddYears(1));
+                        var matched = instSessions.Where(s => matchedChildIds.Contains(s.ChildId)).ToList();
+                        sessionsList.AddRange(matched);
+                    }
+                }
+
+                // STEP 2: Conversational response generation
+                reportsForPrompt = reports.Select(r => new
+                {
+                    childName = children.FirstOrDefault(c => c.ChildId == r.ChildId)?.FullName,
+                    reportDate = r.ReportDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    isPresent = r.IsPresent,
+                    comment = r.Comment,
+                    metrics = r.Metrics
+                }).Cast<object>().ToList();
+
+                string childrenJson = childrenList.Count > 0 ? JsonSerializer.Serialize(childrenList) : "[]";
+                string reportsJson = reportsForPrompt.Count > 0 ? JsonSerializer.Serialize(reportsForPrompt) : "[]";
+                string sessionsJson = JsonSerializer.Serialize(sessionsList);
+                string parentsContactJson = JsonSerializer.Serialize(parentsContactList);
+                string groupsSummariesJson = groupsSummariesList.Count > 0 ? JsonSerializer.Serialize(groupsSummariesList) : "[]";
+                string instructorsSummariesJson = instructorsSummariesList.Count > 0 ? JsonSerializer.Serialize(instructorsSummariesList) : "[]";
+
+                string systemPrompt2 = $@"You are the Senior Data Analyst and Advanced Comparison Engine built into an hydrotherapy swimming school management application.
+Answer the user's query in HEBREW using the provided database context below.
+
+Details about the school's children, groups, instructors, and reports are loaded:
+- Role: School Manager
+- Children List: {childrenJson}
+- Progress Reports: {reportsJson}
+- Scheduled Lessons: {sessionsJson}
+- Group Summaries: {groupsSummariesJson}
+- Instructor Summaries: {instructorsSummariesJson}
+- Parent Contacts: {parentsContactJson}
+
+You must execute all required statistical and logical calculations internally:
+1. Averages: Calculate overall averages and specific metric averages (1-5 scale) from the raw progress reports.
+2. Attendance Rates: Calculate attendance rate as: (Present Lessons / Total Lessons) * 100%.
+3. Progress Velocity & Trend: Compare the average score of the first 20% of chronological lessons (baseline) with the last 20% of lessons (current). Define trend: 'שיפור משמעותי' (Improvement > 15%), 'יציבות' (Stagnation), or 'נסיגה' (Decline).
+
+Formatting Rules:
+- Markdown Tables: When comparing multiple children, groups, or metrics, you MUST present them in a clear Markdown table (e.g. name | overall average | attendance | lead metric).
+- Bullet Points: For key insights.
+- Bottom Line: Conclude with a brief 2-3 sentence executive summary.
+
+Read-Only Mode: You cannot modify or write any database records. 
+Do not mention function names, JSON, database, or API structures in your response. Speak naturally as a professional hydrotherapy expert.";
+
+                string finalResponse = await CallGeminiAsync(systemPrompt2, userMessage, request.History);
+
+                // Save assistant message to database history (use managerId as key)
+                _db.SaveAIChatMessage(managerId, "ai", finalResponse);
+
+                return Ok(new { response = finalResponse });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = $"Error processing AI chat: {ex.Message}" });
+            }
+        }
+
+        [HttpGet("instructor/{instructorId:int}/ai-chat/history")]
+        public IActionResult GetInstructorAIChatHistory(int instructorId)
+        {
+            if (instructorId <= 0) return BadRequest("Invalid instructor ID.");
+            var history = _db.GetAIChatMessages(instructorId);
+            return Ok(history.Select(h => new
+            {
+                senderType = h.SenderType,
+                messageText = h.MessageText,
+                sentAt = h.SentAt
+            }));
+        }
+
+        [HttpGet("manager/{managerId:int}/ai-chat/history")]
+        public IActionResult GetManagerAIChatHistory(int managerId)
+        {
+            if (managerId <= 0) return BadRequest("Invalid manager ID.");
+            var history = _db.GetAIChatMessages(managerId);
+            return Ok(history.Select(h => new
+            {
+                senderType = h.SenderType,
+                messageText = h.MessageText,
+                sentAt = h.SentAt
+            }));
+        }
+
+        [HttpDelete("instructor/{instructorId:int}/ai-chat/history")]
+        public IActionResult ClearInstructorAIChatHistory(int instructorId)
+        {
+            if (instructorId <= 0) return BadRequest("Invalid instructor ID.");
+            _db.ClearAIChatMessages(instructorId);
+            return Ok(new { message = "History cleared." });
+        }
+
+        [HttpDelete("manager/{managerId:int}/ai-chat/history")]
+        public IActionResult ClearManagerAIChatHistory(int managerId)
+        {
+            if (managerId <= 0) return BadRequest("Invalid manager ID.");
+            _db.ClearAIChatMessages(managerId);
+            return Ok(new { message = "History cleared." });
+        }
+
+        // ==========================================
+        //             AI Helpers & Calculations
+        // ==========================================
+
+        private static bool IsDatabaseQuery(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            string norm = text.ToLowerInvariant();
+            string[] keywords = { 
+                "דוח", "הערכ", "שיעור", "התקדמ", "ממוצע", "מדד", 
+                "קבוצ", "ילד", "הור", "קשר", "טלפון", "מייל",
+                "סטטוס", "נתונ", "רשימ", "שחיי", "הידרותרפ", "נשימ", "ציפ",
+                "קואורדינ", "תקשור", "מאמץ", "התמד", "נוכח", "השווא", "השוו"
+            };
+            return keywords.Any(k => norm.Contains(k));
+        }
+
+        private static string CleanJsonText(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return "[]";
+            string cleaned = input.Trim();
+            if (cleaned.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned[7..].Trim();
+            }
+            else if (cleaned.StartsWith("```", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned[3..].Trim();
+            }
+            if (cleaned.EndsWith("```"))
+            {
+                cleaned = cleaned[..^3].Trim();
+            }
+            return cleaned;
+        }
+
+        private static List<int> GetIdsFromArgs(Dictionary<string, JsonElement>? args, string key)
+        {
+            var ids = new List<int>();
+            if (args != null && args.TryGetValue(key, out JsonElement element))
+            {
+                if (element.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.Number && item.TryGetInt32(out int id))
+                        {
+                            ids.Add(id);
+                        }
+                    }
+                }
+                else if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out int id))
+                {
+                    ids.Add(id);
+                }
+            }
+            return ids;
+        }
+
+        private static int GetLimitFromArgs(Dictionary<string, JsonElement>? args, int defaultLimit)
+        {
+            if (args != null && args.TryGetValue("limit", out JsonElement element))
+            {
+                if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out int limit))
+                {
+                    return limit;
+                }
+            }
+            return defaultLimit;
+        }
+
+        private static double CalculateAverageScoreFromReports(List<ChildReportRecord> reports)
+        {
+            var presentReports = reports.Where(r => r.IsPresent && !string.IsNullOrEmpty(r.Metrics)).ToList();
+            if (presentReports.Count == 0) return 0;
+
+            double sum = 0;
+            int count = 0;
+            foreach (var r in presentReports)
+            {
+                var metricAverages = CalculateMetricAveragesForChild(new List<ChildReportRecord> { r });
+                if (metricAverages.Count > 0)
+                {
+                    sum += metricAverages.Values.Average();
+                    count++;
+                }
+            }
+            return count > 0 ? Math.Round(sum / count, 1) : 0;
+        }
+
+        private static Dictionary<string, double> CalculateMetricAveragesForChild(List<ChildReportRecord> reports)
+        {
+            var results = new Dictionary<string, double>();
+            var presentReports = reports.Where(r => r.IsPresent && !string.IsNullOrEmpty(r.Metrics)).ToList();
+            if (presentReports.Count == 0) return results;
+
+            var metricScores = new Dictionary<string, List<int>>();
+            foreach (var r in presentReports)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(r.Metrics);
+                    if (doc.RootElement.ValueKind != JsonValueKind.Array) continue;
+
+                    foreach (var m in doc.RootElement.EnumerateArray())
+                    {
+                        if (m.TryGetProperty("isIncluded", out var isIncElement) && isIncElement.ValueKind == JsonValueKind.False)
+                        {
+                            continue;
+                        }
+
+                        string title = string.Empty;
+                        if (m.TryGetProperty("label", out var labelProp) && labelProp.ValueKind == JsonValueKind.String)
+                        {
+                            title = labelProp.GetString() ?? string.Empty;
+                        }
+                        else if (m.TryGetProperty("MetricTitle", out var titleProp) && titleProp.ValueKind == JsonValueKind.String)
+                        {
+                            title = titleProp.GetString() ?? string.Empty;
+                        }
+
+                        int score = -1;
+                        if (m.TryGetProperty("value", out var valueProp) && valueProp.ValueKind == JsonValueKind.Number)
+                        {
+                            score = valueProp.GetInt32();
+                        }
+                        else if (m.TryGetProperty("Score", out var scoreProp) && scoreProp.ValueKind == JsonValueKind.Number)
+                        {
+                            score = scoreProp.GetInt32();
+                        }
+
+                        if (!string.IsNullOrEmpty(title) && score >= 0)
+                        {
+                            title = title.Trim();
+                            if (!metricScores.ContainsKey(title))
+                            {
+                                metricScores[title] = new List<int>();
+                            }
+                            metricScores[title].Add(score);
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            foreach (var pair in metricScores)
+            {
+                results[pair.Key] = Math.Round(pair.Value.Average(), 1);
+            }
+            return results;
+        }
+
+        private async Task<string> CallGeminiAsync(string systemPrompt, string userMessage, List<ChatHistoryItem>? history = null)
+        {
+            string apiKey = (Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? _configuration["OpenAI:ApiKey"] ?? string.Empty).Trim();
+            string apiUrl = (Environment.GetEnvironmentVariable("OPENAI_BASE_URL") ?? Environment.GetEnvironmentVariable("OPENAI_API_URL") ?? _configuration["OpenAI:BaseUrl"] ?? "https://api.openai.com/v1/chat/completions").Trim();
+            string model = (Environment.GetEnvironmentVariable("OPENAI_MODEL") ?? _configuration["OpenAI:Model"] ?? "google/gemini-2.5-flash").Trim();
+
+            var messages = new List<object>();
+            messages.Add(new { role = "system", content = systemPrompt });
+
+            if (history != null)
+            {
+                foreach (var h in history)
+                {
+                    string role = string.Equals(h.SenderType, "User", StringComparison.OrdinalIgnoreCase) ? "user" : "assistant";
+                    messages.Add(new { role, content = h.MessageText });
+                }
+            }
+
+            messages.Add(new { role = "user", content = userMessage });
+
+            var payload = new
+            {
+                model,
+                temperature = 0.2,
+                messages = messages.ToArray()
+            };
+
+            using HttpClient client = _httpClientFactory.CreateClient();
+            using var req = new HttpRequestMessage(HttpMethod.Post, apiUrl)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            };
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            req.Headers.Add("HTTP-Referer", "https://equal-aquatics.app");
+            req.Headers.Add("X-Title", "Equal Aquatics");
+
+            using var resp = await client.SendAsync(req);
+            resp.EnsureSuccessStatusCode();
+            string respJson = await resp.Content.ReadAsStringAsync();
+
+            using JsonDocument doc = JsonDocument.Parse(respJson);
+            return doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString() ?? string.Empty;
         }
 
         public class RegisterPushTokenRequest

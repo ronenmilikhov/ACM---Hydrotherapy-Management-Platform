@@ -1,43 +1,42 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform, StatusBar, I18nManager } from 'react-native';
 import { colors, shadows } from '../theme/tokens';
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.bgDeep,
+    paddingTop: Platform.OS === 'ios' ? 44 : (Platform.OS === 'android' ? StatusBar.currentHeight : 0),
   },
   scrollContent: {
     paddingHorizontal: 12,
-    paddingTop: 24,
-    paddingBottom: 28,
+    paddingTop: 4,
+    paddingBottom: 48,
   },
   topHeaderRow: {
     paddingHorizontal: 16,
-    marginTop: 12,
-    marginBottom: -8,
+    paddingVertical: 2,
+    marginTop: 0,
+    marginBottom: 4,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    gap: 12,
     zIndex: 12,
   },
   topHeaderTextWrap: {
-    flex: 1,
-    marginLeft: 12,
     alignItems: 'flex-end',
   },
   topHeaderTitle: {
     color: '#f4fcff',
-    fontSize: 34,
+    fontSize: 24,
     fontWeight: '800',
-    writingDirection: 'rtl',
-    textAlign: 'right',
     textShadowColor: 'rgba(0, 212, 255, 0.4)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
   },
   logoutButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.26)',
@@ -45,9 +44,8 @@ const styles = StyleSheet.create({
   },
   logoutButtonText: {
     color: '#e6f6ff',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
-    writingDirection: 'rtl',
     textAlign: 'center',
   },
   mainCard: {
@@ -63,7 +61,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 24,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   statsRow: {
@@ -101,7 +99,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     fontSize: 15,
     textAlign: 'center',
-    writingDirection: 'rtl',
   },
   groupsTitle: {
     marginTop: 18,
@@ -110,7 +107,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     color: 'rgba(255,255,255,0.62)',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   actionCloud: {
@@ -158,7 +155,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     textAlign: 'center',
-    writingDirection: 'rtl',
   },
   actionIconLabelDisabled: {
     color: 'rgba(255,255,255,0.6)',
@@ -203,7 +199,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     color: 'rgba(255,255,255,0.66)',
     fontSize: 15,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   managementSectionWrap: {
@@ -213,12 +209,13 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
     backgroundColor: 'rgba(0, 19, 39, 0.34)',
     padding: 10,
+    width: '100%',
   },
   managementSectionTitle: {
     color: '#f3fbff',
     fontSize: 18,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   input: {
@@ -230,8 +227,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 21, 41, 0.52)',
     paddingHorizontal: 12,
     color: '#f0faff',
-    textAlign: 'right',
-    writingDirection: 'rtl',
   },
   searchInput: {
     marginTop: 8,
@@ -250,21 +245,21 @@ const styles = StyleSheet.create({
     marginTop: 4,
     color: '#ff9a9a',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   fieldHintText: {
     marginTop: 4,
     color: 'rgba(255,255,255,0.62)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   managementEmptyText: {
     marginTop: 8,
     color: 'rgba(255,255,255,0.64)',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   managementRow: {
@@ -273,40 +268,45 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
     backgroundColor: 'rgba(255,255,255,0.06)',
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    padding: 14,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    width: '100%',
   },
   managementRowActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 6,
+    justifyContent: I18nManager.isRTL ? 'flex-end' : 'flex-start',
+    columnGap: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    paddingTop: 10,
+    marginTop: 6,
   },
   managementRowTextWrap: {
-    flex: 1,
-    marginLeft: 10,
-    alignItems: 'flex-end',
+    width: '100%',
+    alignItems: 'stretch',
+    marginBottom: 6,
   },
   managementRowTitle: {
     color: '#f1fbff',
     fontSize: 14,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   managementRowMeta: {
     marginTop: 2,
     color: '#9fd8f7',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
+    writingDirection: 'rtl',
   },
   managementRowSubMeta: {
     marginTop: 2,
     color: 'rgba(255,255,255,0.7)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   entityEditButton: {
@@ -324,7 +324,6 @@ const styles = StyleSheet.create({
     color: '#ddf7ff',
     fontSize: 12,
     fontWeight: '700',
-    writingDirection: 'rtl',
   },
   entityDeleteButton: {
     minWidth: 58,
@@ -341,7 +340,6 @@ const styles = StyleSheet.create({
     color: '#ffd4d4',
     fontSize: 12,
     fontWeight: '700',
-    writingDirection: 'rtl',
   },
   groupChildrenToggle: {
     marginTop: 8,
@@ -357,7 +355,7 @@ const styles = StyleSheet.create({
     color: '#d9f7ff',
     fontSize: 12,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   groupChildrenDropdownPanel: {
@@ -368,18 +366,19 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 21, 41, 0.4)',
     paddingVertical: 8,
     paddingHorizontal: 10,
+    width: '100%',
   },
   groupChildrenName: {
     color: '#d9f0ff',
     fontSize: 12,
-    textAlign: 'right',
-    writingDirection: 'rtl',
     marginTop: 2,
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
+    writingDirection: 'rtl',
   },
   groupChildrenEmptyText: {
     color: 'rgba(255,255,255,0.64)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   modalBackdrop: {
@@ -403,21 +402,21 @@ const styles = StyleSheet.create({
     color: '#f3fcff',
     fontSize: 24,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   modalSubtitle: {
     marginTop: 4,
     color: 'rgba(255,255,255,0.64)',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   fieldLabel: {
     marginTop: 10,
     color: '#ccedff',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   dropdownTrigger: {
@@ -444,7 +443,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: '#eefbff',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   dropdownPlaceholderText: {
@@ -482,7 +481,7 @@ const styles = StyleSheet.create({
   dropdownOptionText: {
     color: '#eefaff',
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   dropdownOptionTextActive: {
@@ -496,7 +495,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
     color: 'rgba(255,255,255,0.64)',
     fontSize: 12,
-    textAlign: 'left',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
+    writingDirection: 'rtl',
   },
   dropdownOptionMetaDisabled: {
     color: 'rgba(255,255,255,0.48)',
@@ -506,7 +506,7 @@ const styles = StyleSheet.create({
     color: '#def6ff',
     fontSize: 15,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   aiRecommendationCard: {
@@ -521,21 +521,21 @@ const styles = StyleSheet.create({
     color: '#e8fbff',
     fontSize: 14,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   aiRecommendationMeta: {
     marginTop: 4,
     color: 'rgba(255,255,255,0.78)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   aiRecommendationFallback: {
     marginTop: 6,
     color: '#ffd89b',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   aiRecommendationReasoning: {
@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.84)',
     fontSize: 13,
     lineHeight: 18,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
   },
   aiApplyButtonShell: {
@@ -558,7 +558,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
-    writingDirection: 'rtl',
   },
   modalActionsWrap: {
     marginTop: 12,
@@ -574,7 +573,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '700',
-    writingDirection: 'rtl',
+    textAlign: 'center',
   },
   modalCancelButton: {
     marginTop: 10,
@@ -586,7 +585,99 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     fontSize: 15,
     fontWeight: '600',
+  },
+  skillChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+    marginTop: 2,
+  },
+  skillChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  skillChipStrengthActive: {
+    backgroundColor: 'rgba(34, 197, 94, 0.25)',
+    borderColor: '#22c55e',
+  },
+  skillChipWeaknessActive: {
+    backgroundColor: 'rgba(239, 68, 68, 0.25)',
+    borderColor: '#ef4444',
+  },
+  skillChipDisabled: {
+    opacity: 0.35,
+  },
+  skillChipText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  skillChipTextActive: {
+    color: '#ffffff',
+  },
+  skillChipTextDisabled: {
+    color: 'rgba(255, 255, 255, 0.4)',
+  },
+  personalGoalsSection: {
+    alignSelf: 'stretch',
+    marginTop: 10,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    width: '100%',
+  },
+  personalGoalItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+    width: '100%',
+    gap: 8,
+  },
+  personalGoalIcon: {
+    fontSize: 16,
+    marginTop: 2,
+  },
+  personalGoalTextWrap: {
+    flex: 1,
+  },
+  personalGoalType: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 2,
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
     writingDirection: 'rtl',
+  },
+  personalGoalTypeStrength: {
+    color: '#22c55e',
+  },
+  personalGoalTypeWeakness: {
+    color: '#ef4444',
+  },
+  personalGoalText: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: Platform.OS === 'ios' ? 'left' : 'right',
+    writingDirection: 'rtl',
+  },
+  managementListContainer: {
+    maxHeight: 380,
+    marginHorizontal: -8,
+  },
+  managementListContent: {
+    paddingHorizontal: 14,
+    paddingBottom: 8,
   },
 });
 

@@ -113,29 +113,26 @@ namespace ReactServerSide.Controllers
                 }
                 
                 // Only iterate over the three configured OpenAI keys for this endpoint.
-                string primaryApiKey = (_configuration["OpenAI:ApiKey"] ?? string.Empty).Trim();
-                string secondaryApiKey = (_configuration["OpenAI:ApiKeySecondary"] ?? string.Empty).Trim();
-                string tertiaryApiKey = (_configuration["OpenAI:ApiKeyTertiary"] ?? string.Empty).Trim();
+                string apiKey = (Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? _configuration["OpenAI:ApiKey"] ?? string.Empty).Trim();
 
-                List<string> apiKeys = new List<string>();
-                if (!string.IsNullOrWhiteSpace(primaryApiKey)) apiKeys.Add(primaryApiKey);
-                if (!string.IsNullOrWhiteSpace(secondaryApiKey) && !string.Equals(primaryApiKey, secondaryApiKey, StringComparison.Ordinal)) apiKeys.Add(secondaryApiKey);
-                if (!string.IsNullOrWhiteSpace(tertiaryApiKey)
-                    && !string.Equals(primaryApiKey, tertiaryApiKey, StringComparison.Ordinal)
-                    && !string.Equals(secondaryApiKey, tertiaryApiKey, StringComparison.Ordinal)) apiKeys.Add(tertiaryApiKey);
-
-                if (apiKeys.Count == 0)
+                if (string.IsNullOrWhiteSpace(apiKey))
                 {
                     return StatusCode(503, new { message = AiStatisticsUnavailableMessage });
                 }
 
-                string apiUrl = (_configuration["OpenAI:BaseUrl"] ?? "https://api.openai.com/v1/chat/completions").Trim();
-                string model = (_configuration["OpenAI:Model"] ?? "gpt-4.1-mini").Trim();
+                string apiUrl = (Environment.GetEnvironmentVariable("OPENAI_BASE_URL") ?? Environment.GetEnvironmentVariable("OPENAI_API_URL") ?? _configuration["OpenAI:BaseUrl"] ?? "https://api.openai.com/v1/chat/completions").Trim();
+                string model = (Environment.GetEnvironmentVariable("OPENAI_MODEL") ?? _configuration["OpenAI:Model"] ?? "google/gemini-2.5-flash").Trim();
                 string lastFailure = string.Empty;
 
                 StringBuilder groupsData = new StringBuilder();
                 foreach (var s in stats)
                 {
+                    if (s.MedianMetrics == null || s.MedianMetrics.Count == 0)
+                    {
+                        s.AiNotes = "אין עדיין מספיק מדדים לקבוצה זו בטווח התאריכים שנבחר.";
+                        continue;
+                    }
+
                     groupsData.AppendLine("- שם קבוצה: " + s.GroupName);
                     groupsData.AppendLine("מדדים (חציון):");
                     foreach (var m in s.MedianMetrics)
@@ -144,66 +141,87 @@ namespace ReactServerSide.Controllers
                     }
                 }
 
-                string requestJson = JsonSerializer.Serialize(new
+                if (groupsData.Length == 0)
                 {
-                    model,
-                    temperature = 0.5,
-                    messages = new object[]
-                    {
-                        new { role = "system", content = "החזר JSON בלבד במבנה: {\"generalSummary\": \"...\", \"groupNotes\": { \"שם קבוצה 1\": \"...\", \"שם קבוצה 2\": \"...\" }}. נתח את חציון המדדים לכל קבוצה. עבור כל קבוצה ב-groupNotes, תן פסקת 'הצלחות ונתונים לשיפור' ממוקדת. ה-generalSummary לסיכום כולל. השתמש בעברית. חובה להחזיר JSON טהור ללא עטיפות קוד כגון ```json או הערות נוספות." },
-                        new { role = "user", content = "הנה הנתונים: \n" + groupsData.ToString() }
-                    }
-                });
+                    return Ok(new { Groups = stats, AiSummary = "אין עדיין נתוני מדדים של אף קבוצה בטווח התאריכים הנוכחי. יש להוסיף דוחות כדי לראות תובנות חכמות." });
+                }
+
+                string statsSystemPrompt = (_configuration["OpenAI:GroupStatsSystemPrompt"] ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(statsSystemPrompt))
+                {
+                    statsSystemPrompt = "החזר JSON בלבד במבנה: {\"generalSummary\": \"...\", \"groupNotes\": { \"שם קבוצה 1\": \"...\", \"שם קבוצה 2\": \"...\" }}. נתח את חציון המדדים לכל קבוצה. עבור כל קבוצה ב-groupNotes, תן פסקת 'הצלחות ונתונים לשיפור' ממוקדת. ה-generalSummary לסיכום כולל. השתמש בעברית. חובה להחזיר JSON טהור ללא עטיפות קוד כגון ```json או הערות נוספות.";
+                }
+
+                string statsUserPromptTemplate = (_configuration["OpenAI:GroupStatsUserPromptTemplate"] ?? string.Empty).Trim();
+                string statsUserPrompt;
+                if (!string.IsNullOrWhiteSpace(statsUserPromptTemplate))
+                {
+                    statsUserPrompt = statsUserPromptTemplate.Replace("{groupsData}", groupsData.ToString());
+                }
+                else
+                {
+                    statsUserPrompt = "הנה הנתונים: \n" + groupsData.ToString();
+                }
 
                 HttpClient client = _httpClientFactory.CreateClient();
-                foreach (string apiKey in apiKeys)
+                try
                 {
-                    try
+                    string requestJson = JsonSerializer.Serialize(new
                     {
-                        using HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, apiUrl)
+                        model = model,
+                        temperature = 0.5,
+                        messages = new object[]
                         {
-                            Content = new StringContent(requestJson, Encoding.UTF8, "application/json")
-                        };
-                        requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-                        using HttpResponseMessage response = await client.SendAsync(requestMessage);
-                        string responseJson = await response.Content.ReadAsStringAsync();
-
-                        if (!response.IsSuccessStatusCode)
-                        {
-                            lastFailure = $"API returned status {(int)response.StatusCode}: {responseJson}";
-                            continue;
+                            new { role = "system", content = statsSystemPrompt },
+                            new { role = "user", content = statsUserPrompt }
                         }
+                    });
 
+                    using HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, apiUrl)
+                    {
+                        Content = new StringContent(requestJson, Encoding.UTF8, "application/json")
+                    };
+                    requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                    using HttpResponseMessage response = await client.SendAsync(requestMessage);
+                    string responseJson = await response.Content.ReadAsStringAsync();
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string shortBody = responseJson.Length > 200 ? responseJson[..200] : responseJson;
+                        lastFailure = $"model {model}: API returned status {(int)response.StatusCode}: {shortBody}";
+                    }
+                    else
+                    {
                         string content = ExtractMessageContentFromOpenAiResponse(responseJson);
 
                         if (!TryParseAiGroupStatisticsResponse(content, out string generalSummary, out Dictionary<string, string> groupNotesByName))
                         {
-                            lastFailure = "AI response could not be parsed into the required JSON structure.";
-                            continue;
+                            lastFailure = $"model {model}: AI response could not be parsed into the required JSON structure.";
                         }
+                        else
+                        {
+                            ApplyAiGroupNotes(stats, groupNotesByName);
+                            ApplyFallbackGroupNotes(stats);
 
-                        ApplyAiGroupNotes(stats, groupNotesByName);
-                        ApplyFallbackGroupNotes(stats);
+                            string resolvedGeneralSummary = string.IsNullOrWhiteSpace(generalSummary)
+                                ? BuildFallbackGeneralSummary(stats)
+                                : generalSummary;
 
-                        string resolvedGeneralSummary = string.IsNullOrWhiteSpace(generalSummary)
-                            ? BuildFallbackGeneralSummary(stats)
-                            : generalSummary;
-
-                        return Ok(new { Groups = stats, AiSummary = resolvedGeneralSummary });
-                    }
-                    catch (Exception)
-                    {
-                        lastFailure = "Request failed while calling AI provider.";
-                        // Iterate over the next configured key.
-                        continue;
+                            return Ok(new { Groups = stats, AiSummary = resolvedGeneralSummary });
+                        }
                     }
                 }
+                catch (Exception ex)
+                {
+                    lastFailure = $"model {model}: Request failed while calling AI provider: {ex.Message}";
+                }
 
-                Console.WriteLine($"[AI GroupStats] All API keys failed. Last failure: {lastFailure}");
-                return StatusCode(503, new { message = AiStatisticsUnavailableMessage });
+                Console.WriteLine($"[AI GroupStats] API failed: {lastFailure}");
+                return StatusCode(503, new { message = AiStatisticsUnavailableMessage + " פירוט: " + lastFailure });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Console.WriteLine($"[AI GroupStats] Exception in GetGroupStatisticsAi: {ex}");
                 return StatusCode(500, new { message = "לא ניתן לטעון סטטיסטיקות כרגע." });
             }
         }
@@ -667,26 +685,16 @@ namespace ReactServerSide.Controllers
                 throw new InvalidOperationException("לא נמצאו קבוצות פעילות עם מדריך משויך.");
             }
 
-            // Only iterate over the three configured OpenAI keys for this endpoint.
-            string primaryApiKey = (_configuration["OpenAI:ApiKey"] ?? string.Empty).Trim();
-            string secondaryApiKey = (_configuration["OpenAI:ApiKeySecondary"] ?? string.Empty).Trim();
-            string tertiaryApiKey = (_configuration["OpenAI:ApiKeyTertiary"] ?? string.Empty).Trim();
+            string apiKey = (Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? _configuration["OpenAI:ApiKey"] ?? string.Empty).Trim();
 
-            List<string> apiKeys = new List<string>();
-            if (!string.IsNullOrWhiteSpace(primaryApiKey)) apiKeys.Add(primaryApiKey);
-            if (!string.IsNullOrWhiteSpace(secondaryApiKey) && !string.Equals(primaryApiKey, secondaryApiKey, StringComparison.Ordinal)) apiKeys.Add(secondaryApiKey);
-            if (!string.IsNullOrWhiteSpace(tertiaryApiKey)
-                && !string.Equals(primaryApiKey, tertiaryApiKey, StringComparison.Ordinal)
-                && !string.Equals(secondaryApiKey, tertiaryApiKey, StringComparison.Ordinal)) apiKeys.Add(tertiaryApiKey);
-
-            if (apiKeys.Count == 0)
+            if (string.IsNullOrWhiteSpace(apiKey))
             {
                 Console.WriteLine("[AI RecommendGroup] No API keys configured.");
                 throw new InvalidOperationException(AiEngineUnavailableMessage);
             }
 
-            string apiUrl = (_configuration["OpenAI:BaseUrl"] ?? "https://api.openai.com/v1/chat/completions").Trim();
-            string model = (_configuration["OpenAI:Model"] ?? "gpt-4.1-mini").Trim();
+            string apiUrl = (Environment.GetEnvironmentVariable("OPENAI_BASE_URL") ?? Environment.GetEnvironmentVariable("OPENAI_API_URL") ?? _configuration["OpenAI:BaseUrl"] ?? "https://api.openai.com/v1/chat/completions").Trim();
+            string model = (Environment.GetEnvironmentVariable("OPENAI_MODEL") ?? _configuration["OpenAI:Model"] ?? "google/gemini-2.5-flash").Trim();
             Console.WriteLine($"[AI RecommendGroup] Configured model from settings: {model}");
 
             // Build the simple prompt: send all group descriptions + child description
@@ -697,7 +705,23 @@ namespace ReactServerSide.Controllers
                 groupsList.AppendLine($"- קבוצה מספר {group.GroupId}, שם: \"{group.Name}\", תיאור: \"{desc}\"");
             }
 
-            string userPrompt = $@"להלן תיאור של ילד:
+            string systemPrompt = (_configuration["OpenAI:GroupMatchSystemPrompt"] ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(systemPrompt))
+            {
+                systemPrompt = "אתה עוזר שמתאים ילדים לקבוצות לימוד. החזר JSON בלבד, ללא markdown, ללא קוד, ללא הסברים נוספים. הערך reasoning חייב להיות משפט אחד קצר בעברית.";
+            }
+
+            string userPromptTemplate = (_configuration["OpenAI:GroupMatchUserPromptTemplate"] ?? string.Empty).Trim();
+            string userPrompt;
+            if (!string.IsNullOrWhiteSpace(userPromptTemplate))
+            {
+                userPrompt = userPromptTemplate
+                    .Replace("{childDescription}", childDescription.Trim())
+                    .Replace("{groupsList}", groupsList.ToString());
+            }
+            else
+            {
+                userPrompt = $@"להלן תיאור של ילד:
 ""{childDescription.Trim()}""
 
 להלן רשימת הקבוצות הקיימות:
@@ -706,166 +730,166 @@ namespace ReactServerSide.Controllers
 ענה בפורמט JSON בלבד, ללא שום טקסט נוסף, בדיוק כך:
 {{""recommendedGroupId"": <מספר הקבוצה>, ""reasoning"": ""<משפט אחד קצר בעברית שמסביר למה הקבוצה הזו הכי מתאימה לילד>""}}
 כלל מחייב: reasoning חייב להיות משפט אחד בלבד (בלי רשימות ובלי ירידות שורה).";
-
-            string systemPrompt = "אתה עוזר שמתאים ילדים לקבוצות לימוד. החזר JSON בלבד, ללא markdown, ללא קוד, ללא הסברים נוספים. הערך reasoning חייב להיות משפט אחד קצר בעברית.";
-
-            string requestJson = JsonSerializer.Serialize(new
-            {
-                model,
-                temperature = 0.3,
-                messages = new object[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                }
-            });
+            }
 
             HashSet<int> validGroupIds = candidateGroups.Select((g) => g.GroupId).ToHashSet();
             HttpClient client = _httpClientFactory.CreateClient();
             string lastFailure = string.Empty;
 
-            foreach (string apiKey in apiKeys)
+            try
             {
-                try
+                string requestJson = JsonSerializer.Serialize(new
                 {
-                    using HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, apiUrl)
+                    model = model,
+                    temperature = 0.3,
+                    messages = new object[]
                     {
-                        Content = new StringContent(requestJson, Encoding.UTF8, "application/json")
-                    };
-                    requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-                    requestMessage.Headers.TryAddWithoutValidation("HTTP-Referer", "https://localhost");
-                    requestMessage.Headers.TryAddWithoutValidation("X-Title", "ACM Manager Groups");
-
-                    using HttpResponseMessage response = await client.SendAsync(requestMessage);
-                    string responseJson = await response.Content.ReadAsStringAsync();
-
-                    Console.WriteLine($"[AI RecommendGroup] Status: {(int)response.StatusCode}");
-                    Console.WriteLine($"[AI RecommendGroup] Response: {responseJson}");
-
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        lastFailure = $"API returned status {(int)response.StatusCode}: {responseJson}";
-                        Console.WriteLine($"[AI RecommendGroup] FAILED: {lastFailure}");
-                        continue;
+                        new { role = "system", content = systemPrompt },
+                        new { role = "user", content = userPrompt }
                     }
+                });
 
+                using HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, apiUrl)
+                {
+                    Content = new StringContent(requestJson, Encoding.UTF8, "application/json")
+                };
+                requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                requestMessage.Headers.TryAddWithoutValidation("HTTP-Referer", "https://localhost");
+                requestMessage.Headers.TryAddWithoutValidation("X-Title", "ACM Manager Groups");
+
+                using HttpResponseMessage response = await client.SendAsync(requestMessage);
+                string responseJson = await response.Content.ReadAsStringAsync();
+
+                Console.WriteLine($"[AI RecommendGroup] Model: {model}, Status: {(int)response.StatusCode}");
+                Console.WriteLine($"[AI RecommendGroup] Response: {responseJson}");
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    string shortBody = responseJson.Length > 200 ? responseJson[..200] : responseJson;
+                    lastFailure = $"model {model}: API returned status {(int)response.StatusCode}: {shortBody}";
+                    Console.WriteLine($"[AI RecommendGroup] FAILED: {lastFailure}");
+                }
+                else
+                {
                     // Extract the AI message content
                     string aiContent = ExtractMessageContentFromOpenAiResponse(responseJson);
                     Console.WriteLine($"[AI RecommendGroup] AI content: {aiContent}");
 
                     if (string.IsNullOrWhiteSpace(aiContent))
                     {
-                        lastFailure = "AI returned empty content";
-                        continue;
+                        lastFailure = $"model {model}: AI returned empty content";
                     }
-
-                    // Clean up: strip markdown code fences if present
-                    string cleaned = aiContent.Trim();
-                    if (cleaned.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
-                        cleaned = cleaned.Substring(7).Trim();
-                    else if (cleaned.StartsWith("```", StringComparison.OrdinalIgnoreCase))
-                        cleaned = cleaned.Substring(3).Trim();
-                    if (cleaned.EndsWith("```", StringComparison.OrdinalIgnoreCase))
-                        cleaned = cleaned.Substring(0, cleaned.Length - 3).Trim();
-
-                    // Find JSON object boundaries
-                    int firstBrace = cleaned.IndexOf('{');
-                    int lastBrace = cleaned.LastIndexOf('}');
-                    if (firstBrace >= 0 && lastBrace > firstBrace)
+                    else
                     {
-                        cleaned = cleaned.Substring(firstBrace, lastBrace - firstBrace + 1);
-                    }
+                        // Clean up: strip markdown code fences if present
+                        string cleaned = aiContent.Trim();
+                        if (cleaned.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
+                            cleaned = cleaned.Substring(7).Trim();
+                        else if (cleaned.StartsWith("```", StringComparison.OrdinalIgnoreCase))
+                            cleaned = cleaned.Substring(3).Trim();
+                        if (cleaned.EndsWith("```", StringComparison.OrdinalIgnoreCase))
+                            cleaned = cleaned.Substring(0, cleaned.Length - 3).Trim();
 
-                    Console.WriteLine($"[AI RecommendGroup] Cleaned JSON: {cleaned}");
-
-                    // Parse the JSON
-                    int recommendedGroupId = 0;
-                    string reasoning = string.Empty;
-
-                    try
-                    {
-                        using JsonDocument doc = JsonDocument.Parse(cleaned);
-                        JsonElement root = doc.RootElement;
-
-                        // Try to get recommendedGroupId
-                        if (TryGetJsonInt(root, out int parsedId, "recommendedGroupId", "groupId", "recommended_group_id", "group_id", "id"))
+                        // Find JSON object boundaries
+                        int firstBrace = cleaned.IndexOf('{');
+                        int lastBrace = cleaned.LastIndexOf('}');
+                        if (firstBrace >= 0 && lastBrace > firstBrace)
                         {
-                            recommendedGroupId = parsedId;
+                            cleaned = cleaned.Substring(firstBrace, lastBrace - firstBrace + 1);
                         }
 
-                        // Try to get reasoning
-                        if (TryGetJsonString(root, out string parsedReasoning, "reasoning", "reason", "explanation", "why", "description"))
+                        Console.WriteLine($"[AI RecommendGroup] Cleaned JSON: {cleaned}");
+
+                        // Parse the JSON
+                        int recommendedGroupId = 0;
+                        string reasoning = string.Empty;
+
+                        try
                         {
-                            reasoning = NormalizeSingleSentenceReasoning(parsedReasoning);
-                        }
-                    }
-                    catch (Exception parseEx)
-                    {
-                        Console.WriteLine($"[AI RecommendGroup] JSON parse error: {parseEx.Message}");
+                            using JsonDocument doc = JsonDocument.Parse(cleaned);
+                            JsonElement root = doc.RootElement;
 
-                        // Regex fallback for group ID
-                        Match idMatch = Regex.Match(cleaned, @"""?(?:recommendedGroupId|groupId|group_id|id)""?\s*[:=]\s*""?(\d+)""?", RegexOptions.IgnoreCase);
-                        if (idMatch.Success) int.TryParse(idMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out recommendedGroupId);
-
-                        // Regex fallback for reasoning
-                        Match reasonMatch = Regex.Match(cleaned, @"""?(?:reasoning|reason|explanation)""?\s*[:=]\s*""([^""]+)""", RegexOptions.IgnoreCase);
-                        if (reasonMatch.Success) reasoning = NormalizeSingleSentenceReasoning(reasonMatch.Groups[1].Value);
-                    }
-
-                    Console.WriteLine($"[AI RecommendGroup] Parsed groupId={recommendedGroupId}, reasoning={reasoning}");
-
-                    // Validate group ID
-                    if (!validGroupIds.Contains(recommendedGroupId))
-                    {
-                        // Try to match by name from the reasoning text
-                        foreach (GroupSummaryRecord g in candidateGroups)
-                        {
-                            if (!string.IsNullOrWhiteSpace(g.Name) && cleaned.Contains(g.Name, StringComparison.OrdinalIgnoreCase))
+                            // Try to get recommendedGroupId
+                            if (TryGetJsonInt(root, out int parsedId, "recommendedGroupId", "groupId", "recommended_group_id", "group_id", "id"))
                             {
-                                recommendedGroupId = g.GroupId;
-                                Console.WriteLine($"[AI RecommendGroup] Resolved group by name match: {g.Name} -> {g.GroupId}");
-                                break;
+                                recommendedGroupId = parsedId;
+                            }
+
+                            // Try to get reasoning
+                            if (TryGetJsonString(root, out string parsedReasoning, "reasoning", "reason", "explanation", "why", "description"))
+                            {
+                                reasoning = NormalizeSingleSentenceReasoning(parsedReasoning);
                             }
                         }
+                        catch (Exception parseEx)
+                        {
+                            Console.WriteLine($"[AI RecommendGroup] JSON parse error: {parseEx.Message}");
+
+                            // Regex fallback for group ID
+                            Match idMatch = Regex.Match(cleaned, @"""?(?:recommendedGroupId|groupId|group_id|id)""?\s*[:=]\s*""?(\d+)""?", RegexOptions.IgnoreCase);
+                            if (idMatch.Success) int.TryParse(idMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out recommendedGroupId);
+
+                            // Regex fallback for reasoning
+                            Match reasonMatch = Regex.Match(cleaned, @"""?(?:reasoning|reason|explanation)""?\s*[:=]\s*""([^""]+)""", RegexOptions.IgnoreCase);
+                            if (reasonMatch.Success) reasoning = NormalizeSingleSentenceReasoning(reasonMatch.Groups[1].Value);
+                        }
+
+                        Console.WriteLine($"[AI RecommendGroup] Parsed groupId={recommendedGroupId}, reasoning={reasoning}");
+
+                        // Validate group ID
+                        if (!validGroupIds.Contains(recommendedGroupId))
+                        {
+                            // Try to match by name from the reasoning text
+                            foreach (GroupSummaryRecord g in candidateGroups)
+                            {
+                                if (!string.IsNullOrWhiteSpace(g.Name) && cleaned.Contains(g.Name, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    recommendedGroupId = g.GroupId;
+                                    Console.WriteLine($"[AI RecommendGroup] Resolved group by name match: {g.Name} -> {g.GroupId}");
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!validGroupIds.Contains(recommendedGroupId))
+                        {
+                            lastFailure = $"model {model}: AI returned invalid group id: {recommendedGroupId}";
+                            Console.WriteLine($"[AI RecommendGroup] FAILED: {lastFailure}");
+                        }
+                        else
+                        {
+                            GroupSummaryRecord recommendedGroup = candidateGroups.First((g) => g.GroupId == recommendedGroupId);
+
+                            if (string.IsNullOrWhiteSpace(reasoning))
+                            {
+                                reasoning = $"הקבוצה \"{recommendedGroup.Name}\" מתאימה ביותר לילד לפי תיאור הצרכים והמאפיינים שהוזנו.";
+                            }
+
+                            return new GroupRecommendationResultRecord
+                            {
+                                ChildId = child.ChildId,
+                                ChildFullName = child.FullName,
+                                RecommendedGroupId = recommendedGroup.GroupId,
+                                RecommendedGroupName = recommendedGroup.Name,
+                                RecommendedInstructorFullName = recommendedGroup.InstructorFullName,
+                                Score = 0,
+                                UsedFallback = false,
+                                Reasoning = reasoning,
+                                SharedTerms = new List<string>(),
+                                SharedConcepts = new List<string>()
+                            };
+                        }
                     }
-
-                    if (!validGroupIds.Contains(recommendedGroupId))
-                    {
-                        lastFailure = $"AI returned invalid group id: {recommendedGroupId}";
-                        Console.WriteLine($"[AI RecommendGroup] FAILED: {lastFailure}");
-                        continue;
-                    }
-
-                    GroupSummaryRecord recommendedGroup = candidateGroups.First((g) => g.GroupId == recommendedGroupId);
-
-                    if (string.IsNullOrWhiteSpace(reasoning))
-                    {
-                        reasoning = $"הקבוצה \"{recommendedGroup.Name}\" מתאימה ביותר לילד לפי תיאור הצרכים והמאפיינים שהוזנו.";
-                    }
-
-                    return new GroupRecommendationResultRecord
-                    {
-                        ChildId = child.ChildId,
-                        ChildFullName = child.FullName,
-                        RecommendedGroupId = recommendedGroup.GroupId,
-                        RecommendedGroupName = recommendedGroup.Name,
-                        RecommendedInstructorFullName = recommendedGroup.InstructorFullName,
-                        Score = 0,
-                        UsedFallback = false,
-                        Reasoning = reasoning,
-                        SharedTerms = new List<string>(),
-                        SharedConcepts = new List<string>()
-                    };
-                }
-                catch (Exception ex)
-                {
-                    lastFailure = $"Request error: {ex.Message}";
-                    Console.WriteLine($"[AI RecommendGroup] Exception: {ex}");
                 }
             }
+            catch (Exception ex)
+            {
+                lastFailure = $"model {model}: Request error: {ex.Message}";
+                Console.WriteLine($"[AI RecommendGroup] Exception: {ex}");
+            }
 
-            Console.WriteLine($"[AI RecommendGroup] All API keys failed. Last failure: {lastFailure}");
-            throw new InvalidOperationException(AiEngineUnavailableMessage);
+            Console.WriteLine($"[AI RecommendGroup] API failed. Last failure: {lastFailure}");
+            throw new InvalidOperationException(AiEngineUnavailableMessage + " פירוט: " + lastFailure);
         }
 
         private static string NormalizeSingleSentenceReasoning(string rawReasoning)
@@ -921,12 +945,12 @@ namespace ReactServerSide.Controllers
                     return string.Empty;
                 }
 
+                string rawText = string.Empty;
                 if (contentElement.ValueKind == JsonValueKind.String)
                 {
-                    return (contentElement.GetString() ?? string.Empty).Trim();
+                    rawText = (contentElement.GetString() ?? string.Empty).Trim();
                 }
-
-                if (contentElement.ValueKind == JsonValueKind.Array)
+                else if (contentElement.ValueKind == JsonValueKind.Array)
                 {
                     StringBuilder contentBuilder = new StringBuilder();
 
@@ -938,8 +962,14 @@ namespace ReactServerSide.Controllers
                         }
                     }
 
-                    return contentBuilder.ToString().Trim();
+                    rawText = contentBuilder.ToString().Trim();
                 }
+
+                return rawText
+                    .Replace("הבוגרים יום", "הבתולת ים")
+                    .Replace("בוגרים יום", "בתולת ים")
+                    .Replace("הבוגריםיום", "הבתולת ים")
+                    .Replace("בוגריםיום", "בתולת ים");
             }
             catch
             {
@@ -1129,10 +1159,10 @@ namespace ReactServerSide.Controllers
 
             if (string.Equals(strongestMetric, weakestMetric, StringComparison.Ordinal))
             {
-                return $"המדדים בקבוצה יציבים סביב {Math.Round(strongestValue, 2):0.##}/10. מומלץ לשמר את רמת הביצוע ולהמשיך בתרגול עקבי.";
+                return $"המדדים בקבוצה יציבים סביב {Math.Round(strongestValue, 2):0.##}/5. מומלץ לשמר את רמת הביצוע ולהמשיך בתרגול עקבי.";
             }
 
-            return $"חוזקה מרכזית: {strongestMetric} ({Math.Round(strongestValue, 2):0.##}/10). נתון לשיפור: {weakestMetric} ({Math.Round(weakestValue, 2):0.##}/10). מומלץ לשמר את החוזקה ולבנות תרגול ממוקד לשיפור המדד החלש.";
+            return $"חוזקה מרכזית: {strongestMetric} ({Math.Round(strongestValue, 2):0.##}/5). נתון לשיפור: {weakestMetric} ({Math.Round(weakestValue, 2):0.##}/5). מומלץ לשמר את החוזקה ולבנות תרגול ממוקד לשיפור המדד החלש.";
         }
 
         private static string BuildFallbackGeneralSummary(List<GroupAiStatisticRecord> stats)
@@ -1240,10 +1270,10 @@ namespace ReactServerSide.Controllers
 
             if (groupsWithMetrics.Count == 1)
             {
-                return $"קיימת כרגע קבוצה אחת עם נתונים ({bestGroup.GroupName}). ממוצע המדדים שלה הוא {Math.Round(bestAverage, 2):0.##}/10. מומלץ להמשיך להזין דוחות כדי לאפשר השוואה בין קבוצות.";
+                return $"קיימת כרגע קבוצה אחת עם נתונים ({bestGroup.GroupName}). ממוצע המדדים שלה הוא {Math.Round(bestAverage, 2):0.##}/5. מומלץ להמשיך להזין דוחות כדי לאפשר השוואה בין קבוצות.";
             }
 
-            return $"בהשוואת חציון המדדים בין הקבוצות, הקבוצה המובילה היא {bestGroup.GroupName} עם ממוצע {Math.Round(bestAverage, 2):0.##}/10, בעוד {weakestGroup.GroupName} דורשת חיזוק עם ממוצע {Math.Round(weakestAverage, 2):0.##}/10. בכלל המתחם, המדד החזק הוא {topMetric} ({Math.Round(topMetricAverage, 2):0.##}/10) והמדד שדורש את מירב תשומת הלב הוא {weakestMetric} ({Math.Round(weakestMetricAverage, 2):0.##}/10).";
+            return $"בהשוואת חציון המדדים בין הקבוצות, הקבוצה המובילה היא {bestGroup.GroupName} עם ממוצע {Math.Round(bestAverage, 2):0.##}/5, בעוד {weakestGroup.GroupName} דורשת חיזוק עם ממוצע {Math.Round(weakestAverage, 2):0.##}/5. בכלל המתחם, המדד החזק הוא {topMetric} ({Math.Round(topMetricAverage, 2):0.##}/5) והמדד שדורש את מירב תשומת הלב הוא {weakestMetric} ({Math.Round(weakestMetricAverage, 2):0.##}/5).";
         }
 
         private static bool TryParseAiGroupRecommendation(string content, out AiGroupRecommendationPayload recommendation)

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Platform,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -209,9 +210,11 @@ export default function ParentNotificationsInbox({ navigation, route }) {
       <RoleHeader
         title="התראות"
         onMenuPress={() => navigation.goBack()}
-        leftIcon="‹"
+        leftIcon="›"
         rightIcon="↻"
         onRightPress={() => loadNotifications()}
+        theme="dark"
+        titleStyle={{ color: '#092d42', textShadowColor: 'transparent' }}
       />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -257,6 +260,9 @@ export default function ParentNotificationsInbox({ navigation, route }) {
                 <>
                   <Text style={styles.meta}>סטטוס הזמנה: {invitationStatusMap[item.invitationStatus] || item.invitationStatus || 'לא זמין'}</Text>
                   <Text style={styles.meta}>תגובה שלכם: {responseStatusMap[item.recipientResponseStatus] || item.recipientResponseStatus || 'לא זמין'}</Text>
+                  {String(item.targetMetric || '').trim() ? (
+                    <Text style={styles.meta}>מדד מטרה לשיעור: <Text style={{ fontWeight: '700', color: '#ffcf77' }}>{item.targetMetric}</Text></Text>
+                  ) : null}
                 </>
               ) : null}
 
@@ -305,25 +311,25 @@ export default function ParentNotificationsInbox({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#E8F5FD' },
-  content: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 24, gap: 12 },
+  safeArea: { flex: 1, backgroundColor: '#E8F5FD', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
+  content: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 48, gap: 12 },
   stateText: {
     color: 'rgba(255,255,255,0.72)',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
     fontSize: 14,
     marginTop: 8,
   },
   errorText: {
     color: '#ff9a8b',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
     fontSize: 14,
     marginTop: 8,
   },
   successText: {
     color: '#9ef3c8',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
     fontSize: 14,
     marginTop: 8,
@@ -341,7 +347,7 @@ const styles = StyleSheet.create({
     color: '#8aeaff',
     fontSize: 12,
     fontWeight: '700',
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
     marginBottom: 4,
   },
@@ -349,19 +355,19 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.86)',
     fontSize: 14,
     lineHeight: 21,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
   meta: {
     marginTop: 6,
     color: 'rgba(255,255,255,0.58)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
   actionsRow: {
     marginTop: 10,
-    flexDirection: 'row-reverse',
+    flexDirection: Platform.OS === 'ios' ? 'row-reverse' : 'row',
     gap: 10,
   },
   actionShell: {

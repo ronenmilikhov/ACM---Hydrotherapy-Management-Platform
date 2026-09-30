@@ -35,6 +35,8 @@ const styles = StyleSheet.create({
     ...shadows.glowPrimary,
   },
   gradient: {
+    flex: 1,
+    width: '100%',
     minHeight: 44,
     paddingHorizontal: 18,
     paddingVertical: 12,

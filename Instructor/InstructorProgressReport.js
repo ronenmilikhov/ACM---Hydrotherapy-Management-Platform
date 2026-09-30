@@ -1,12 +1,13 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   StyleSheet, Text, View, Animated, Dimensions, TouchableOpacity,
-  StatusBar, Easing, Platform, TextInput, Alert, findNodeHandle,
+  StatusBar, Easing, Platform, TextInput, Alert, findNodeHandle, Modal, FlatList, I18nManager,
+  KeyboardAvoidingView, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path } from 'react-native-svg';
-import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+// DateTimePicker no longer needed – lesson dates are selected from a dropdown
 import AppCard from '../components/ui/AppCard';
 import { colors, shadows } from '../theme/tokens';
 import PrimaryButton from '../components/ui/PrimaryButton';
@@ -38,84 +39,204 @@ const Wave = ({ color, duration, startPosition, d }) => {
   );
 };
 
-// ========================================
-// 2. REINCARNATING BUBBLES
-// ========================================
-const Bubble = () => {
-  const progress = useRef(new Animated.Value(0)).current;
-  const sway = useRef(new Animated.Value(0)).current;
-  const [config, setConfig] = useState({ size: Math.random() * 30 + 10, left: Math.random() * width });
-  const durationRef = useRef(Math.random() * 16000 + 14000);
-  const isFirstRun = useRef(true);
-
-  const startFloat = () => {
-    progress.setValue(0);
-    const delay = isFirstRun.current ? Math.random() * 30000 : 0;
-    isFirstRun.current = false;
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.timing(progress, { toValue: 1, duration: durationRef.current, easing: Easing.linear, useNativeDriver: true }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        durationRef.current = Math.random() * 16000 + 14000;
-        setConfig({ size: Math.random() * 30 + 10, left: Math.random() * width });
-        startFloat();
-      }
-    });
-  };
-
-  useEffect(() => {
-    startFloat();
-    const swayAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(sway, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: -1, duration: 4000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    );
-    swayAnim.start();
-    return () => { progress.stopAnimation(); sway.stopAnimation(); };
-  }, []);
-
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height + 50, -150] });
-  const opacity = progress.interpolate({ inputRange: [0, 0.1, 0.8, 1], outputRange: [0, 1, 1, 0] });
-  const translateX = sway.interpolate({ inputRange: [-1, 1], outputRange: [-20, 20] });
-
-  return (
-    <Animated.View style={[styles.bubbleWrapper, { width: config.size, height: config.size, borderRadius: config.size / 2, left: config.left, transform: [{ translateY }, { translateX }], opacity }]}>
-      <LinearGradient colors={["rgba(255,255,255,0.95)", "rgba(255,255,255,0.1)"]} style={{ flex: 1, borderRadius: config.size / 2, borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' }} />
-    </Animated.View>
-  );
-};
 
 // ========================================
 // 3. PROGRESS BARS
 // ========================================
-const initialRows = [
-  { label: 'הסתגלות וביטחון במים', value: 9 },
-  { label: 'שליטה בנשימות (הכנסת ראש למים)', value: 8 },
-  { label: 'תנועתיות וקואורדינציה', value: 7 },
-  { label: 'יציבה וציפה', value: 8 },
-  { label: 'תקשורת במים (ושיתוף פעולה)', value: 9 },
-  { label: 'התמדה ומאמץ', value: 10 },
+const exerciseCatalog = [
+  {
+    key: 'front_float',
+    title: 'ציפה על הבטן',
+    metrics: [
+      'הסתגלות וביטחון במים',
+      'שליטה בנשימות (הכנסת ראש למים)',
+      'תנועתיות וקואורדינציה',
+      'יציבה וציפה',
+      'תקשורת במים (ושיתוף פעולה)',
+      'התמדה ומאמץ',
+      'יוזמה',
+      'קשב וריכוז',
+      'תגובה להוראות',
+      'עצמאות בתרגיל',
+    ],
+  },
+  {
+    key: 'back_float',
+    title: 'ציפה על הגב',
+    metrics: [
+      'הסתגלות וביטחון במים',
+      'שליטה בנשימות (הכנסת ראש למים)',
+      'תנועתיות וקואורדינציה',
+      'יציבה וציפה',
+      'תקשורת במים (ושיתוף פעולה)',
+      'התמדה ומאמץ',
+      'יוזמה',
+      'קשב וריכוז',
+      'תגובה להוראות',
+      'עצמאות בתרגיל',
+    ],
+  },
+  {
+    key: 'front_kicks',
+    title: 'בעיטות בטן',
+    metrics: [
+      'הסתגלות וביטחון במים',
+      'שליטה בנשימות (הכנסת ראש למים)',
+      'תנועתיות וקואורדינציה',
+      'יציבה וציפה',
+      'תקשורת במים (ושיתוף פעולה)',
+      'התמדה ומאמץ',
+      'יוזמה',
+      'קשב וריכוז',
+      'תגובה להוראות',
+      'עצמאות בתרגיל',
+    ],
+  },
+  {
+    key: 'back_kicks',
+    title: 'בעיטות גב',
+    metrics: [
+      'הסתגלות וביטחון במים',
+      'שליטה בנשימות (הכנסת ראש למים)',
+      'תנועתיות וקואורדינציה',
+      'יציבה וציפה',
+      'תקשורת במים (ושיתוף פעולה)',
+      'התמדה ומאמץ',
+      'יוזמה',
+      'קשב וריכוז',
+      'תגובה להוראות',
+      'עצמאות בתרגיל',
+    ],
+  },
+  {
+    key: 'arrow_jump',
+    title: 'קפיצה חץ',
+    metrics: [
+      'הסתגלות וביטחון במים',
+      'שליטה בנשימות (הכנסת ראש למים)',
+      'תנועתיות וקואורדינציה',
+      'יציבה וציפה',
+      'תקשורת במים (ושיתוף פעולה)',
+      'התמדה ומאמץ',
+      'יוזמה',
+      'קשב וריכוז',
+      'תגובה להוראות',
+      'עצמאות בתרגיל',
+    ],
+  },
+  {
+    key: 'deep_jump',
+    title: 'קפיצה עמוק',
+    metrics: [
+      'הסתגלות וביטחון במים',
+      'שליטה בנשימות (הכנסת ראש למים)',
+      'תנועתיות וקואורדינציה',
+      'יציבה וציפה',
+      'תקשורת במים (ושיתוף פעולה)',
+      'התמדה ומאמץ',
+      'יוזמה',
+      'קשב וריכוז',
+      'תגובה להוראות',
+      'עצמאות בתרגיל',
+    ],
+  },
+  {
+    key: 'hoop_pass',
+    title: 'חישוק',
+    metrics: [
+      'הסתגלות וביטחון במים',
+      'שליטה בנשימות (הכנסת ראש למים)',
+      'תנועתיות וקואורדינציה',
+      'יציבה וציפה',
+      'תקשורת במים (ושיתוף פעולה)',
+      'התמדה ומאמץ',
+      'יוזמה',
+      'קשב וריכוז',
+      'תגובה להוראות',
+      'עצמאות בתרגיל',
+    ],
+  },
+  {
+    key: 'water_confidence',
+    title: 'ביטחון במים',
+    metrics: [
+      'הסתגלות וביטחון במים',
+      'שליטה בנשימות (הכנסת ראש למים)',
+      'תנועתיות וקואורדינציה',
+      'יציבה וציפה',
+      'תקשורת במים (ושיתוף פעולה)',
+      'התמדה ומאמץ',
+      'יוזמה',
+      'קשב וריכוז',
+      'תגובה להוראות',
+      'עצמאות בתרגיל',
+    ],
+  },
+  {
+    key: 'breathing_control',
+    title: 'שליטה בנשימות (הכנסת ראש למים)',
+    metrics: [
+      'הסתגלות וביטחון במים',
+      'שליטה בנשימות (הכנסת ראש למים)',
+      'תנועתיות וקואורדינציה',
+      'יציבה וציפה',
+      'תקשורת במים (ושיתוף פעולה)',
+      'התמדה ומאמץ',
+      'יוזמה',
+      'קשב וריכוז',
+      'תגובה להוראות',
+      'עצמאות בתרגיל',
+    ],
+  },
 ];
 
-const RATING_MIN = 0;
-const RATING_MAX = 10;
+const exerciseCatalogByKey = exerciseCatalog.reduce((acc, exercise) => {
+  acc[exercise.key] = exercise;
+  return acc;
+}, {});
 
-const createEmptyMetricRows = () => {
-  return initialRows.map((metric) => ({
-    ...metric,
+const createEmptyExerciseMetrics = (exerciseKey) => {
+  const template = exerciseCatalogByKey[exerciseKey] || exerciseCatalog[0];
+  return (template?.metrics || []).map((label) => ({
+    label,
     value: RATING_MIN,
-  }));
-};
-
-const createWritableMetricRows = () => {
-  return initialRows.map((metric) => ({
-    ...metric,
     isIncluded: true,
   }));
 };
+
+const createExerciseProgressStore = () => {
+  return exerciseCatalog.reduce((acc, exercise) => {
+    acc[exercise.key] = {
+      exerciseKey: exercise.key,
+      title: exercise.title,
+      metrics: createEmptyExerciseMetrics(exercise.key),
+    };
+    return acc;
+  }, {});
+};
+
+const getExerciseTitleByKey = (exerciseKey) => {
+  const found = exerciseCatalogByKey[exerciseKey];
+  return found?.title || 'תרגיל';
+};
+
+const getExerciseCompletionPercent = (metrics) => {
+  const values = Array.isArray(metrics)
+    ? metrics
+      .filter((metric) => metric?.isIncluded !== false)
+      .map((metric) => normalizeProgressValue(metric?.value))
+    : [];
+
+  if (values.length === 0) {
+    return 0;
+  }
+
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return Math.max(0, Math.min(100, Math.round(((average - RATING_MIN) / (RATING_MAX - RATING_MIN)) * 100)));
+};
+
+const RATING_MIN = 0;
+const RATING_MAX = 5;
 
 const normalizeProgressValue = (rawValue) => {
   if (!Number.isFinite(rawValue)) return RATING_MIN;
@@ -127,89 +248,42 @@ const formatRatingValue = (rawValue) => {
   return `${normalizeProgressValue(rawValue)}`;
 };
 
-const calcMedian = (values) => {
-  const sortedValues = values
-    .filter((value) => Number.isFinite(value))
-    .slice()
-    .sort((a, b) => a - b);
-
-  if (sortedValues.length === 0) return RATING_MIN;
-
-  const middleIndex = Math.floor(sortedValues.length / 2);
-  if (sortedValues.length % 2 === 1) {
-    return sortedValues[middleIndex];
-  }
-
-  return (sortedValues[middleIndex - 1] + sortedValues[middleIndex]) / 2;
+const mapKeyToExerciseTitle = {
+  front_float: 'ציפה על הבטן',
+  back_float: 'ציפה על הגב',
+  front_kicks: 'בעיטות בטן',
+  back_kicks: 'בעיטות גב',
+  arrow_jump: 'קפיצה חץ',
+  deep_jump: 'קפיצה עמוק',
+  hoop_pass: 'חישוק',
+  water_confidence: 'ביטחון במים',
 };
 
-const buildMedianMetrics = (reports, metricsTemplate) => {
-  const metricsByLabel = new Map(
-    metricsTemplate.map((metric) => [String(metric.label || '').trim(), []]),
-  );
+const getExerciseTitle = (item) => {
+  const directTitle = String(item?.title || '').trim();
+  if (directTitle) return directTitle;
 
-  (Array.isArray(reports) ? reports : []).forEach((report) => {
-    const rawNotes = report?.notes;
-
-    let parsedNotes = null;
-    if (rawNotes && typeof rawNotes === 'object') {
-      parsedNotes = rawNotes;
-    } else if (typeof rawNotes === 'string' && rawNotes.trim()) {
-      try {
-        parsedNotes = JSON.parse(rawNotes);
-      } catch (_error) {
-        parsedNotes = null;
-      }
-    }
-
-    const metricsList = Array.isArray(parsedNotes?.metrics) ? parsedNotes.metrics : [];
-
-    metricsList.forEach((metric, index) => {
-      const rawValue = Number(metric?.value);
-      if (!Number.isFinite(rawValue)) {
-        return;
-      }
-
-      const normalizedValue = normalizeProgressValue(rawValue);
-      const metricLabel = String(metric?.label || '').trim();
-
-      if (metricsByLabel.has(metricLabel)) {
-        metricsByLabel.get(metricLabel).push(normalizedValue);
-        return;
-      }
-
-      // Fallback by index for malformed/garbled labels in historical notes JSON.
-      if (index >= 0 && index < metricsTemplate.length) {
-        const fallbackLabel = String(metricsTemplate[index].label || '').trim();
-        metricsByLabel.get(fallbackLabel).push(normalizedValue);
-      }
-    });
-  });
-
-  return metricsTemplate.map((metric) => {
-    const label = String(metric.label || '').trim();
-    const values = metricsByLabel.get(label) || [];
-
-    if (values.length === 0) {
-      return {
-        ...metric,
-        value: RATING_MIN,
-      };
-    }
-
-    return {
-      ...metric,
-      value: normalizeProgressValue(calcMedian(values)),
-    };
-  });
+  const key = String(item?.exerciseKey || '').trim();
+  if (!key) return 'תרגיל';
+  return mapKeyToExerciseTitle[key] || key;
 };
 
 const formatReportDate = (dateValue) => {
-  if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
+  if (!dateValue) return '';
+  let d = dateValue;
+  if (typeof dateValue === 'string') {
+    const parts = dateValue.split('-');
+    if (parts.length === 3) {
+      d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    } else {
+      d = new Date(dateValue);
+    }
+  }
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) {
     return '';
   }
 
-  return dateValue.toLocaleDateString('he-IL', {
+  return d.toLocaleDateString('he-IL', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -251,7 +325,10 @@ const resolveSummaryErrorMessage = (payload) => {
     || normalizedDetails.includes('rate limit')
     || normalizedDetails.includes('429')
   ) {
-    return 'שירות ה-AI לא זמין כרגע או הגיע למגבלת שימוש זמנית. אפשר לרענן ולנסות שוב בעוד כמה דקות.';
+    if (normalizedMessage.includes('429') || normalizedDetails.includes('429')) {
+      return 'שירות ה-AI הגיע למגבלת שימוש זמנית (429). אפשר לנסות שוב בעוד כמה דקות.';
+    }
+    return 'שירות ה-AI לא זמין כרגע. אפשר לרענן ולנסות שוב בעוד כמה דקות.';
   }
 
   return backendMessage;
@@ -301,16 +378,25 @@ const parseReportDateInput = (rawValue) => {
 };
 
 const ReadOnlyBar = ({ label, value }) => {
-  const safeVal = normalizeProgressValue(value || 0);
-  const fillPercentage = (safeVal / RATING_MAX) * 100;
+  const safeVal = normalizeProgressValue(value || RATING_MIN);
+  const fillPercentage = ((safeVal - RATING_MIN) / (RATING_MAX - RATING_MIN)) * 100;
 
   return (
     <View style={styles.metricRow}>
-      <View style={styles.metricLabelRow}>
-        <Text style={styles.metricPercent}>{formatRatingValue(safeVal)}/10</Text>
-        <Text style={styles.metricLabel}>{label}</Text>
+      <View style={[styles.metricLabelRow, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+        {Platform.OS === 'web' ? (
+          <>
+            <Text style={styles.metricPercent}>{formatRatingValue(safeVal)}/5</Text>
+            <Text style={[styles.metricLabel, { textAlign: 'right', writingDirection: 'rtl', flexShrink: 1 }]}>{label}</Text>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.metricLabel, { textAlign: 'right', writingDirection: 'rtl', flexShrink: 1 }]}>{label}</Text>
+            <Text style={styles.metricPercent}>{formatRatingValue(safeVal)}/5</Text>
+          </>
+        )}
       </View>
-      <View style={styles.trackOuter}>
+      <View style={[styles.trackOuter, { flexDirection: 'row' }]}>
         <LinearGradient
           colors={['#00d4ff', '#0099cc']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -338,30 +424,53 @@ const WritableBar = ({ label, value, onChange, onInteractionStart, onInteraction
     if (measuredWidth < 2) return;
 
     const touchX = Number(event?.nativeEvent?.locationX ?? 0);
-    const nextValue = normalizeProgressValue((touchX / measuredWidth) * RATING_MAX);
+    let ratio = (touchX + 14) / (measuredWidth + 28);
+    ratio = Math.max(0, Math.min(1, ratio));
+    const nextValue = normalizeProgressValue(RATING_MIN + ratio * (RATING_MAX - RATING_MIN));
     onChange(nextValue);
   };
 
   const safeVal = normalizeProgressValue(value);
-  const fillPercentage = (safeVal / RATING_MAX) * 100;
+  const fillPercentage = ((safeVal - RATING_MIN) / (RATING_MAX - RATING_MIN)) * 100;
 
   return (
     <View style={styles.metricRow}>
-      <View style={styles.metricLabelRow}>
-        <Text style={[styles.metricPercent, disabled ? styles.metricPercentDisabled : { color: '#00d4ff' }]}>{formatRatingValue(safeVal)}/10</Text>
-        <View style={styles.metricLabelActionsRow}>
-          {typeof onRemove === 'function' ? (
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={onRemove}
-              disabled={disabled}
-              style={[styles.metricRemoveButton, disabled && styles.metricRemoveButtonDisabled]}
-            >
-              <Text style={[styles.metricRemoveButtonText, disabled && styles.metricRemoveButtonTextDisabled]}>➖</Text>
-            </TouchableOpacity>
-          ) : null}
-          <Text style={[styles.metricLabel, disabled && styles.metricLabelDisabled]}>{label}</Text>
-        </View>
+      <View style={[styles.metricLabelRow, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+        {Platform.OS === 'web' ? (
+          <>
+            <Text style={[styles.metricPercent, disabled ? styles.metricPercentDisabled : { color: '#00d4ff' }]}>{formatRatingValue(safeVal)}/5</Text>
+            <View style={[styles.metricLabelActionsRow, { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexShrink: 1, gap: 8 }]}>
+              <Text style={[styles.metricLabel, disabled && styles.metricLabelDisabled, { textAlign: 'right', writingDirection: 'rtl' }]}>{label}</Text>
+              {typeof onRemove === 'function' ? (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={onRemove}
+                  disabled={disabled}
+                  style={[styles.metricRemoveButton, disabled && styles.metricRemoveButtonDisabled]}
+                >
+                  <Text style={[styles.metricRemoveButtonText, disabled && styles.metricRemoveButtonTextDisabled]}>➖</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={[styles.metricLabelActionsRow, { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexShrink: 1, gap: 8 }]}>
+              {typeof onRemove === 'function' ? (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={onRemove}
+                  disabled={disabled}
+                  style={[styles.metricRemoveButton, disabled && styles.metricRemoveButtonDisabled]}
+                >
+                  <Text style={[styles.metricRemoveButtonText, disabled && styles.metricRemoveButtonTextDisabled]}>➖</Text>
+                </TouchableOpacity>
+              ) : null}
+              <Text style={[styles.metricLabel, disabled && styles.metricLabelDisabled, { textAlign: 'right', writingDirection: 'rtl' }]}>{label}</Text>
+            </View>
+            <Text style={[styles.metricPercent, disabled ? styles.metricPercentDisabled : { color: '#00d4ff' }]}>{formatRatingValue(safeVal)}/5</Text>
+          </>
+        )}
       </View>
       <View
         style={styles.trackTouchZone}
@@ -376,8 +485,9 @@ const WritableBar = ({ label, value, onChange, onInteractionStart, onInteraction
         onResponderMove={updateValueFromEvent}
         onResponderRelease={() => onInteractionEnd?.()}
         onResponderTerminate={() => onInteractionEnd?.()}
+        hitSlop={{ top: 12, bottom: 12, left: 24, right: 24 }}
       >
-        <View style={[styles.trackOuterWritable, disabled && styles.trackOuterWritableDisabled]} pointerEvents="none">
+        <View style={[styles.trackOuterWritable, { flexDirection: 'row' }, disabled && styles.trackOuterWritableDisabled]} pointerEvents="none">
           <LinearGradient
             colors={disabled ? ['#7d8798', '#677182'] : ['#00d4ff', '#0099cc']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -385,7 +495,7 @@ const WritableBar = ({ label, value, onChange, onInteractionStart, onInteraction
           />
         </View>
         {/* Glowing Thumb */}
-        <View pointerEvents="none" style={[styles.thumbOuter, disabled && styles.thumbOuterDisabled, { left: `${fillPercentage}%` }]}>
+        <View pointerEvents="none" style={[styles.thumbOuter, disabled && styles.thumbOuterDisabled, { left: -4 + (fillPercentage / 100) * (trackWidth + 8) }]}>
           <LinearGradient colors={disabled ? ['#7d8798', '#677182'] : ['#00d4ff', '#0099cc']} style={styles.thumbInner} />
         </View>
       </View>
@@ -399,10 +509,12 @@ const WritableBar = ({ label, value, onChange, onInteractionStart, onInteraction
 export default function InstructorProgressReport({ navigation, route }) {
   const scrollY = useRef(new Animated.Value(0)).current;
   const [mode, setMode] = useState('writable');
-  const [metrics, setMetrics] = useState(() => createWritableMetricRows());
-  const [readableMetrics, setReadableMetrics] = useState(createEmptyMetricRows());
-  const [isLoadingReadableMetrics, setIsLoadingReadableMetrics] = useState(false);
-  const [readableMetricsError, setReadableMetricsError] = useState('');
+  const [exerciseStore, setExerciseStore] = useState(() => createExerciseProgressStore());
+  const [exerciseDbStats, setExerciseDbStats] = useState({});
+  const [selectedExerciseKey, setSelectedExerciseKey] = useState(exerciseCatalog[0].key);
+  const [planRecommendation, setPlanRecommendation] = useState(null);
+  const [isLoadingPlanRecommendation, setIsLoadingPlanRecommendation] = useState(false);
+  const [planRecommendationError, setPlanRecommendationError] = useState('');
   const [readableAiSummary, setReadableAiSummary] = useState('');
   const [readableAiSummarySource, setReadableAiSummarySource] = useState('');
   const [isLoadingReadableSummary, setIsLoadingReadableSummary] = useState(false);
@@ -412,11 +524,30 @@ export default function InstructorProgressReport({ navigation, route }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isMetricInteractionActive, setIsMetricInteractionActive] = useState(false);
   const [reportDate, setReportDate] = useState(new Date());
-  const [showIosNativeDatePicker, setShowIosNativeDatePicker] = useState(false);
-  const [draftIosReportDate, setDraftIosReportDate] = useState(new Date());
+  const [availableLessonDates, setAvailableLessonDates] = useState([]);
+  const [isLessonDatesDropdownOpen, setIsLessonDatesDropdownOpen] = useState(false);
   const [notesCardY, setNotesCardY] = useState(0);
   const scrollViewRef = useRef(null);
   const notesInputRef = useRef(null);
+  const pastReportsRef = useRef([]);
+
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => setIsKeyboardVisible(true)
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => setIsKeyboardVisible(false)
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
 
   const child = route?.params?.child || {};
   const authUser = route?.params?.authUser || {};
@@ -426,42 +557,66 @@ export default function InstructorProgressReport({ navigation, route }) {
   const childName = child.name || 'ילד לא ידוע';
   const initial = childName[0] || 'א';
   const isAttendanceAbsent = mode === 'writable' && !isPresent;
-
-  const bubblePool = useMemo(() => Array.from({ length: 6 }).map((_, i) => i), []);
+  const selectedExercise = exerciseStore[selectedExerciseKey] || exerciseStore[exerciseCatalog[0].key];
+  const metrics = selectedExercise?.metrics || [];
 
   const surfaceOpacity = scrollY.interpolate({ inputRange: [0, height * 0.8], outputRange: [1, 0], extrapolate: 'clamp' });
   const navBg = scrollY.interpolate({ inputRange: [0, 50], outputRange: ['rgba(0, 21, 41, 0.4)', 'rgba(0, 21, 41, 0.85)'], extrapolate: 'clamp' });
 
   const updateMetric = (idx, newValue) => {
-    setMetrics((prevMetrics) => {
-      const nextMetrics = [...prevMetrics];
-      if (!nextMetrics[idx] || nextMetrics[idx].isIncluded === false) {
-        return prevMetrics;
+    setExerciseStore((prevStore) => {
+      const nextStore = { ...prevStore };
+      const currentExercise = nextStore[selectedExerciseKey];
+
+      if (!currentExercise?.metrics?.[idx] || currentExercise.metrics[idx].isIncluded === false) {
+        return prevStore;
       }
 
+      const nextMetrics = [...currentExercise.metrics];
       nextMetrics[idx] = {
         ...nextMetrics[idx],
         value: normalizeProgressValue(newValue),
       };
 
-      return nextMetrics;
+      nextStore[selectedExerciseKey] = {
+        ...currentExercise,
+        metrics: nextMetrics,
+      };
+
+      return nextStore;
     });
   };
 
   const setMetricIncluded = (idx, isIncluded) => {
-    setMetrics((prevMetrics) => {
-      const nextMetrics = [...prevMetrics];
-      if (!nextMetrics[idx]) {
-        return prevMetrics;
+    setExerciseStore((prevStore) => {
+      const nextStore = { ...prevStore };
+      const currentExercise = nextStore[selectedExerciseKey];
+
+      if (!currentExercise?.metrics?.[idx]) {
+        return prevStore;
       }
 
+      const nextMetrics = [...currentExercise.metrics];
       nextMetrics[idx] = {
         ...nextMetrics[idx],
         isIncluded,
       };
 
-      return nextMetrics;
+      nextStore[selectedExerciseKey] = {
+        ...currentExercise,
+        metrics: nextMetrics,
+      };
+
+      return nextStore;
     });
+  };
+
+  const selectExercise = (exerciseKey) => {
+    if (!exerciseCatalogByKey[exerciseKey]) {
+      return;
+    }
+
+    setSelectedExerciseKey(exerciseKey);
   };
 
   useEffect(() => {
@@ -476,17 +631,186 @@ export default function InstructorProgressReport({ navigation, route }) {
     }
   }, [isAttendanceAbsent]);
 
+  // ── Fetch available lesson dates for this child ──
   useEffect(() => {
-    if (mode !== 'writable' && showIosNativeDatePicker) {
-      setShowIosNativeDatePicker(false);
-    }
-  }, [mode, showIosNativeDatePicker]);
+    if (!instructorId || !childId) return;
+    let isCancelled = false;
 
+    const loadLessonDates = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/lesson-scheduling/instructor/${instructorId}/child/${childId}/lesson-dates`);
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !Array.isArray(payload) || isCancelled) return;
+
+        if (!isCancelled) {
+          setAvailableLessonDates(payload);
+          if (payload.length > 0 && payload[0]?.date) {
+            setReportDate(new Date(payload[0].date + 'T00:00:00'));
+          }
+        }
+      } catch (_e) { /* silently ignore */ }
+    };
+
+    loadLessonDates();
+    return () => { isCancelled = true; };
+  }, [instructorId, childId]);
+
+  // ── Fetch past reports from the DB and compute historical exercise percentages ──
   useEffect(() => {
-    if (!showIosNativeDatePicker) {
-      setDraftIosReportDate(reportDate);
+    if (!childId || !instructorId) return;
+    let isCancelled = false;
+
+    const loadPastReports = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/instructor/${instructorId}/children/${childId}/reports`);
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !Array.isArray(payload)) return;
+
+        // Store raw reports for duplicate detection
+        pastReportsRef.current = payload;
+
+        // Group all present reports by exerciseKey and compute average percent per exercise
+        const exerciseReportValues = {};
+        payload.forEach((report) => {
+          const key = String(report?.exerciseKey || '').trim();
+          if (!key) return;
+          // Skip absent reports
+          if (report?.isPresent === false || report?.isPresent === 0) return;
+
+          // Parse metrics
+          let metricsArr = [];
+          if (Array.isArray(report?.metrics)) {
+            metricsArr = report.metrics;
+          } else if (typeof report?.metrics === 'string' && report.metrics.trim()) {
+            try { metricsArr = JSON.parse(report.metrics); } catch (_e) { }
+          }
+          if (!Array.isArray(metricsArr) || metricsArr.length === 0) return;
+
+          // Compute average metric value for this report (0-10 scale)
+          const values = metricsArr
+            .map((m) => Number(m?.value))
+            .filter((v) => Number.isFinite(v));
+          if (values.length === 0) return;
+
+          // Divide by the total possible metrics for this exercise, not just the reported ones (usually 10)
+          const totalPossibleMetrics = exerciseCatalogByKey[key]?.metrics?.length || 10;
+          const sumOfRatings = values.reduce((s, v) => s + v, 0);
+          const avgForReport = sumOfRatings / totalPossibleMetrics;
+
+          if (!exerciseReportValues[key]) exerciseReportValues[key] = [];
+          exerciseReportValues[key].push(avgForReport);
+        });
+
+        if (isCancelled) return;
+
+        // Compute stats per exercise: percent (0-100) and report count
+        const stats = {};
+        Object.keys(exerciseReportValues).forEach((key) => {
+          const allAvgs = exerciseReportValues[key];
+          const overallAvg = allAvgs.reduce((s, v) => s + v, 0) / allAvgs.length;
+          stats[key] = {
+            percent: Math.max(0, Math.min(100, Math.round((overallAvg / RATING_MAX) * 100))),
+            avgSum: allAvgs.reduce((s, v) => s + v, 0),
+            reportCount: allAvgs.length,
+          };
+        });
+
+        if (!isCancelled) {
+          setExerciseDbStats(stats);
+        }
+      } catch (_err) {
+        // silently fail — percents stay at 0
+      }
+    };
+
+    loadPastReports();
+    return () => { isCancelled = true; };
+  }, [childId, instructorId]);
+
+  // ── Auto-load existing child report for the selected exercise and date ──
+  useEffect(() => {
+    if (!reportDate) return;
+    const reportDateStr = toIsoDateString(reportDate).trim();
+
+    // 1. Find if there is any report for the selected date
+    const reportForDate = (pastReportsRef.current || []).find(
+      (r) => String(r?.reportDate || '').trim() === reportDateStr
+    );
+
+    // 2. If a report exists for this date under a different exercise, switch to it
+    if (reportForDate && reportForDate.exerciseKey && String(reportForDate.exerciseKey).trim() !== selectedExerciseKey) {
+      setSelectedExerciseKey(String(reportForDate.exerciseKey).trim());
+      return;
     }
-  }, [showIosNativeDatePicker, reportDate]);
+
+    // 3. Now verify if we have a report matching the selected exercise & date
+    const existing = (pastReportsRef.current || []).find(
+      (r) =>
+        String(r?.reportDate || '').trim() === reportDateStr &&
+        String(r?.exerciseKey || '').trim() === selectedExerciseKey
+    );
+
+    if (existing) {
+      setIsPresent(existing.isPresent !== false);
+      setNotes(existing.comment || '');
+
+      let metricsArr = [];
+      if (Array.isArray(existing.metrics)) {
+        metricsArr = existing.metrics;
+      } else if (typeof existing.metrics === 'string' && existing.metrics.trim()) {
+        try {
+          metricsArr = JSON.parse(existing.metrics);
+        } catch (_e) { }
+      }
+
+      setExerciseStore((prevStore) => {
+        const nextStore = { ...prevStore };
+        const currentExercise = nextStore[selectedExerciseKey];
+        if (!currentExercise) return prevStore;
+
+        const template = exerciseCatalogByKey[selectedExerciseKey];
+        const nextMetrics = (template?.metrics || []).map((label) => {
+          const matched = metricsArr.find(
+            (m) => String(m?.label || '').trim() === label.trim()
+          );
+          if (matched && mode !== 'writable') {
+            return {
+              label,
+              value: normalizeProgressValue(matched.value),
+              isIncluded: matched.isIncluded !== false,
+            };
+          } else {
+            const wasExcluded = metricsArr.length > 0;
+            return {
+              label,
+              value: RATING_MIN,
+              isIncluded: matched ? matched.isIncluded !== false : !wasExcluded,
+            };
+          }
+        });
+
+        nextStore[selectedExerciseKey] = {
+          ...currentExercise,
+          metrics: nextMetrics,
+        };
+        return nextStore;
+      });
+    } else {
+      setIsPresent(true);
+      setNotes('');
+      setExerciseStore((prevStore) => {
+        const nextStore = { ...prevStore };
+        const currentExercise = nextStore[selectedExerciseKey];
+        if (!currentExercise) return prevStore;
+
+        nextStore[selectedExerciseKey] = {
+          ...currentExercise,
+          metrics: createEmptyExerciseMetrics(selectedExerciseKey),
+        };
+        return nextStore;
+      });
+    }
+  }, [selectedExerciseKey, reportDate, exerciseDbStats, mode]);
 
   useEffect(() => {
     if (mode !== 'readable') {
@@ -494,45 +818,46 @@ export default function InstructorProgressReport({ navigation, route }) {
     }
 
     if (!childId || !instructorId) {
-      setReadableMetrics(createEmptyMetricRows());
-      setReadableMetricsError('לא ניתן להציג מדדים כלליים ללא מזהה ילד ומדריך.');
-      setIsLoadingReadableMetrics(false);
+      setPlanRecommendation(null);
+      setPlanRecommendationError('לא ניתן לייצר תכנית עבודה ללא מזהה ילד ומדריך.');
+      setIsLoadingPlanRecommendation(false);
       return;
     }
 
     let isCancelled = false;
 
-    const loadReadableMetrics = async () => {
+    const loadPlanRecommendation = async () => {
       try {
-        setIsLoadingReadableMetrics(true);
-        setReadableMetricsError('');
+        setIsLoadingPlanRecommendation(true);
+        setPlanRecommendationError('');
 
-        const response = await fetch(`${API_BASE_URL}/instructor/${instructorId}/children/${childId}/reports`);
+        const response = await fetch(`${API_BASE_URL}/instructor/${instructorId}/children/${childId}/exercise-plan/recommendation`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ includeCompleted: true }),
+        });
+
         const payload = await response.json().catch(() => null);
-
         if (!response.ok) {
-          throw new Error(payload?.message || 'לא ניתן לטעון את היסטוריית הדיווחים של הילד.');
+          throw new Error(payload?.message || 'לא ניתן לטעון תכנית תרגול אישית כרגע.');
         }
 
-        const reports = Array.isArray(payload) ? payload : [];
-        const nextReadableMetrics = buildMedianMetrics(reports, initialRows);
-
         if (!isCancelled) {
-          setReadableMetrics(nextReadableMetrics);
+          setPlanRecommendation(payload || null);
         }
       } catch (error) {
         if (!isCancelled) {
-          setReadableMetrics(createEmptyMetricRows());
-          setReadableMetricsError(error?.message || 'לא ניתן לחשב מדדים כלליים כרגע.');
+          setPlanRecommendation(null);
+          setPlanRecommendationError(error?.message || 'לא ניתן לטעון תכנית תרגול אישית כרגע.');
         }
       } finally {
         if (!isCancelled) {
-          setIsLoadingReadableMetrics(false);
+          setIsLoadingPlanRecommendation(false);
         }
       }
     };
 
-    loadReadableMetrics();
+    loadPlanRecommendation();
 
     return () => {
       isCancelled = true;
@@ -559,27 +884,62 @@ export default function InstructorProgressReport({ navigation, route }) {
         setIsLoadingReadableSummary(true);
         setReadableSummaryError('');
 
-        const response = await fetch(`${API_BASE_URL}/instructor/${instructorId}/children/${childId}/reports/summary`, {
+        // Step 1: start the job
+        const startResponse = await fetch(`${API_BASE_URL}/instructor/${instructorId}/children/${childId}/reports/summary`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
         });
+        const startPayload = await startResponse.json().catch(() => null);
 
-        const payload = await response.json().catch(() => null);
-
-        if (!response.ok) {
-          throw new Error(resolveSummaryErrorMessage(payload));
+        if (!startResponse.ok) {
+          throw new Error(resolveSummaryErrorMessage(startPayload));
         }
 
-        const summaryText = String(payload?.summary || '').trim();
-        if (!summaryText) {
-          throw new Error('התקבלה תשובה ריקה מהשרת, נסו לרענן שוב בעוד רגע.');
+        // Immediate result (no reports / fallback)
+        if (startPayload?.status === 'done') {
+          if (!isCancelled) {
+            setReadableAiSummary(String(startPayload?.summary || '').trim());
+            setReadableAiSummarySource(String(startPayload?.source || '').trim());
+          }
+          return;
         }
 
-        if (!isCancelled) {
-          setReadableAiSummary(summaryText);
-          setReadableAiSummarySource(String(payload?.source || '').trim());
+        const jobId = startPayload?.jobId;
+        if (!jobId) throw new Error('לא התקבל מזהה עבודה מהשרת.');
+
+        // Step 2: poll every 3s until done or error
+        const pollIntervalMs = 3000;
+        const maxWaitMs = 120000;
+        const startedAt = Date.now();
+
+        while (!isCancelled) {
+          await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+          if (isCancelled) break;
+          if (Date.now() - startedAt > maxWaitMs) {
+            throw new Error('הסיכום לוקח יותר מדי זמן. נסו שוב מאוחר יותר.');
+          }
+
+          const pollResponse = await fetch(
+            `${API_BASE_URL}/instructor/${instructorId}/children/${childId}/reports/summary/${jobId}`
+          );
+          const pollPayload = await pollResponse.json().catch(() => null);
+
+          if (!pollResponse.ok) {
+            throw new Error(resolveSummaryErrorMessage(pollPayload));
+          }
+
+          if (pollPayload?.status === 'done') {
+            if (!isCancelled) {
+              setReadableAiSummary(String(pollPayload?.summary || '').trim());
+              setReadableAiSummarySource(String(pollPayload?.source || '').trim());
+            }
+            return;
+          }
+
+          if (pollPayload?.status === 'error') {
+            throw new Error(pollPayload?.message || 'שירות ה-AI נכשל.');
+          }
+          // status === 'pending' → keep polling
         }
       } catch (error) {
         if (!isCancelled) {
@@ -602,55 +962,12 @@ export default function InstructorProgressReport({ navigation, route }) {
   }, [mode, childId, instructorId]);
 
   const openReportDatePicker = () => {
-    if (Platform.OS === 'android') {
-      DateTimePickerAndroid.open({
-        value: reportDate,
-        mode: 'date',
-        display: 'calendar',
-        minimumDate: new Date(2000, 0, 1),
-        maximumDate: new Date(2100, 11, 31),
-        onChange: (event, selectedDate) => {
-          if (event.type === 'set' && selectedDate) {
-            setReportDate(selectedDate);
-          }
-        },
-      });
-      return;
-    }
-
-    if (Platform.OS === 'web') {
-      if (typeof window === 'undefined' || typeof window.prompt !== 'function') {
-        return;
-      }
-
-      const defaultDate = toIsoDateString(reportDate);
-      const userInput = window.prompt('הזינו תאריך בפורמט YYYY-MM-DD או DD/MM/YYYY', defaultDate);
-      if (userInput == null) {
-        return;
-      }
-
-      const parsedDate = parseReportDateInput(userInput);
-      if (!parsedDate) {
-        Alert.alert('תאריך לא תקין', 'אנא הזינו תאריך בפורמט תקין, לדוגמה 2026-04-05 או 05/04/2026.');
-        return;
-      }
-
-      setReportDate(parsedDate);
-      return;
-    }
-
-    setDraftIosReportDate(reportDate);
-    setShowIosNativeDatePicker((prev) => !prev);
+    setIsLessonDatesDropdownOpen(true);
   };
 
-  const cancelIosDateSelection = () => {
-    setDraftIosReportDate(reportDate);
-    setShowIosNativeDatePicker(false);
-  };
-
-  const confirmIosDateSelection = () => {
-    setReportDate(draftIosReportDate);
-    setShowIosNativeDatePicker(false);
+  const selectLessonDate = (dateStr) => {
+    setReportDate(new Date(dateStr + 'T00:00:00'));
+    setIsLessonDatesDropdownOpen(false);
   };
 
   const scrollNotesInputAboveKeyboard = () => {
@@ -679,7 +996,7 @@ export default function InstructorProgressReport({ navigation, route }) {
     });
   };
 
-  const saveReport = async () => {
+  const saveReport = async (forceOverwrite = false) => {
     if (isSaving) {
       return;
     }
@@ -689,79 +1006,60 @@ export default function InstructorProgressReport({ navigation, route }) {
       return;
     }
 
+    const reportDateStr = toIsoDateString(reportDate).trim();
+
+    const hasDate = availableLessonDates.some(item => item?.date === reportDateStr);
+    if (availableLessonDates.length > 0 && !hasDate) {
+      Alert.alert('תאריך לא תקין', 'לא ניתן לדווח על התקדמות בתאריך שלא היה בו שיעור. אנא בחרו תאריך שיעור מהרשימה.');
+      return;
+    }
+
+    const activeExercise = exerciseStore[selectedExerciseKey] || selectedExercise;
+    const exerciseKey = String(activeExercise?.exerciseKey || activeExercise?.key || selectedExerciseKey).trim();
+    const exerciseTitle = activeExercise?.title || getExerciseTitleByKey(selectedExerciseKey);
+
     const isPresentInMeeting = Boolean(isPresent);
     const normalizedMetrics = isPresentInMeeting
       ? metrics
-          .filter((item) => item?.isIncluded !== false)
-          .map((item) => ({
-            label: String(item?.label || '').trim(),
-            value: normalizeProgressValue(item?.value),
-          }))
+        .filter((item) => item?.isIncluded !== false)
+        .map((item) => ({
+          label: String(item?.label || '').trim(),
+          value: normalizeProgressValue(item?.value),
+        }))
       : [];
     const normalizedComment = isPresentInMeeting ? notes.trim() : '';
 
-    const submitReport = async (overwriteExisting) => {
+    try {
+      setIsSaving(true);
+
       const response = await fetch(`${API_BASE_URL}/instructor/${instructorId}/children/${childId}/reports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           groupId: groupId || null,
-          reportDate: toIsoDateString(reportDate),
+          reportDate: reportDateStr,
           isPresent: isPresentInMeeting,
-          overwriteExisting,
           comment: normalizedComment,
           metrics: normalizedMetrics,
+          exerciseKey: exerciseKey,
+          exerciseTitle: exerciseTitle,
+          overwriteExisting: forceOverwrite || false,
         }),
       });
 
       const payload = await response.json().catch(() => null);
-      return { response, payload };
-    };
 
-    const overwriteExistingReport = async () => {
-      try {
-        setIsSaving(true);
-
-        const { response, payload } = await submitReport(true);
-        if (!response.ok) {
-          throw new Error(payload?.message || 'עדכון הדיווח הקיים נכשל. נסו שוב.');
-        }
-
-        Alert.alert('מעולה', 'הדיווח הקיים עודכן בהצלחה!');
-        navigation.goBack();
-      } catch (error) {
-        Alert.alert('שגיאת שמירה', error?.message || 'לא ניתן לעדכן כרגע את הדיווח הקיים. נסו שוב מאוחר יותר.');
-      } finally {
+      // Backend returned 409 Conflict → a report already exists for this date+exercise
+      if (response.status === 409 && payload?.message === 'duplicate_report') {
         setIsSaving(false);
-      }
-    };
-
-    try {
-      setIsSaving(true);
-
-      const { response, payload } = await submitReport(false);
-
-      if (response.status === 409 && String(payload?.code || '').trim() === 'report_exists_for_date') {
-        setIsSaving(false);
-
         Alert.alert(
-          'כבר קיים דיווח בתאריך הזה',
-          'כבר קיים דיווח לילד בתאריך שבחרת. האם תרצה לערוך את הדיווח הקיים או להשאיר אותו כמו שהוא?',
+          '⚠️ דיווח קיים',
+          `כבר קיים דיווח עבור התרגיל "${exerciseTitle}" בתאריך ${formatReportDate(reportDate)}.\n\nשמירה עכשיו תעדכן את הדיווח הקיים. האם להמשיך?`,
           [
-            {
-              text: 'להשאיר כמו שהוא',
-              style: 'cancel',
-            },
-            {
-              text: 'ערוך את הדיווח הקיים',
-              onPress: () => {
-                void overwriteExistingReport();
-              },
-            },
+            { text: 'ביטול', style: 'cancel' },
+            { text: 'עדכן דיווח', style: 'default', onPress: () => saveReport(true) },
           ],
-          { cancelable: true },
         );
-
         return;
       }
 
@@ -769,10 +1067,14 @@ export default function InstructorProgressReport({ navigation, route }) {
         throw new Error(payload?.message || 'שמירת הדיווח נכשלה. נסו שוב.');
       }
 
+      if (payload) {
+        pastReportsRef.current = [...pastReportsRef.current.filter(r => r.reportId !== payload.reportId), payload];
+      }
+
       Alert.alert('מעולה', 'הדיווח נשמר בהצלחה!');
       navigation.goBack();
     } catch (error) {
-      Alert.alert('שגיאת שמירה', error?.message || 'לא ניתן לשמור כרגע את הדיווח. נסו שוב מאוחר יותר.');
+      Alert.alert('שגיאת שמירה', `${error?.message || 'לא ניתן לשמור כרגע את הדיווח.'}\n\n(נשלח: תאריך=${reportDateStr}, קבוצה=${groupId}, ילד=${childId}, מדריך=${instructorId})`);
     } finally {
       setIsSaving(false);
     }
@@ -785,32 +1087,39 @@ export default function InstructorProgressReport({ navigation, route }) {
       {/* Deep Ocean */}
       <LinearGradient colors={['#005a80', '#00456a', colors.bgDeep]} style={StyleSheet.absoluteFill} />
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: surfaceOpacity }]}>
-        <LinearGradient colors={['#00aed8', '#007fa7', '#004d73']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={['#00aed8', '#007fa7', '#004d73']} style={{ flex: 1 }} />
       </Animated.View>
 
-      {bubblePool.map((id) => <Bubble key={id} />)}
-
-      <Wave color="rgba(0, 153, 204, 0.3)" duration={8000} startPosition={0} d="M0,75 C200,45 400,105 600,75 C800,45 1000,105 1200,75 L1200,150 L0,150 Z M1200,75 C1400,45 1600,105 1800,75 C2000,45 2200,105 2400,75 L2400,150 L1200,150 Z" />
-      <Wave color="rgba(0, 212, 255, 0.25)" duration={6000} startPosition={-600} d="M0,100 C300,60 500,130 800,90 C1000,60 1100,120 1200,100 L1200,150 L0,150 Z M1200,100 C1500,60 1700,130 2000,90 C2200,60 2300,120 2400,100 L2400,150 L1200,150 Z" />
+      {!isKeyboardVisible && (
+        <>
+          <Wave color="rgba(0, 153, 204, 0.3)" duration={8000} startPosition={0} d="M0,75 C200,45 400,105 600,75 C800,45 1000,105 1200,75 L1200,150 L0,150 Z M1200,75 C1400,45 1600,105 1800,75 C2000,45 2200,105 2400,75 L2400,150 L1200,150 Z" />
+          <Wave color="rgba(0, 212, 255, 0.25)" duration={6000} startPosition={-600} d="M0,100 C300,60 500,130 800,90 C1000,60 1100,120 1200,100 L1200,150 L0,150 Z M1200,100 C1500,60 1700,130 2000,90 C2200,60 2300,120 2400,100 L2400,150 L1200,150 Z" />
+        </>
+      )}
 
       {/* NAVBAR */}
       <AnimatedBlurView intensity={20} tint="dark" style={[styles.navbar, { backgroundColor: navBg }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Text style={styles.backButtonIcon}>{'\u2039'}</Text>
+          <Text style={styles.backButtonIcon}>{'\u203a'}</Text>
         </TouchableOpacity>
       </AnimatedBlurView>
 
       {/* SCROLLABLE CONTENT */}
-      <Animated.ScrollView
-        ref={scrollViewRef}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
-        scrollEventThrottle={16}
-        scrollEnabled={!isMetricInteractionActive}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
       >
+        <Animated.ScrollView
+          ref={scrollViewRef}
+          onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
+          scrollEventThrottle={16}
+          scrollEnabled={!isMetricInteractionActive}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        >
         {/* Page Title */}
         <View style={styles.pageHeader}>
           <View style={styles.avatarGlow}>
@@ -834,7 +1143,7 @@ export default function InstructorProgressReport({ navigation, route }) {
             onPress={() => setMode('readable')}
             style={[styles.toggleBtn, mode === 'readable' && styles.toggleBtnActive]}
           >
-            <Text style={[styles.toggleText, mode === 'readable' && styles.toggleTextActive]}>📊 מדדים כלליים</Text>
+            <Text style={[styles.toggleText, mode === 'readable' && styles.toggleTextActive]}>📌 סיכום ותכנית</Text>
           </TouchableOpacity>
         </View>
 
@@ -843,10 +1152,10 @@ export default function InstructorProgressReport({ navigation, route }) {
           {mode === 'readable' ? (
             <View>
               <Text style={styles.infoText}>📅 תאריכים: מתחילת השנה ועד היום</Text>
-              {isLoadingReadableMetrics ? (
-                <Text style={[styles.infoText, styles.readableInfoMetaText]}>מחשב חציון מדדים מכל הדיווחים...</Text>
-              ) : readableMetricsError ? (
-                <Text style={[styles.infoText, styles.readableInfoErrorText]}>{readableMetricsError}</Text>
+              {isLoadingPlanRecommendation ? (
+                <Text style={[styles.infoText, styles.readableInfoMetaText]}>מחשב תכנית עבודה מותאמת...</Text>
+              ) : planRecommendationError ? (
+                <Text style={[styles.infoText, styles.readableInfoErrorText]}>{planRecommendationError}</Text>
               ) : null}
             </View>
           ) : (
@@ -855,32 +1164,53 @@ export default function InstructorProgressReport({ navigation, route }) {
                 <Text style={styles.infoText}>📅 תאריך דיווח: {formatReportDate(reportDate)} (לחץ לשינוי)</Text>
               </TouchableOpacity>
 
-              {Platform.OS === 'ios' && showIosNativeDatePicker ? (
-                <View style={styles.nativeDatePickerWrap}>
-                  <DateTimePicker
-                    value={draftIosReportDate}
-                    mode="date"
-                    display={Number(Platform.Version) >= 14 ? 'inline' : 'spinner'}
-                    themeVariant="light"
-                    minimumDate={new Date(2000, 0, 1)}
-                    maximumDate={new Date(2100, 11, 31)}
-                    onChange={(_event, selectedDate) => {
-                      if (selectedDate) {
-                        setDraftIosReportDate(selectedDate);
+              <Modal
+                visible={isLessonDatesDropdownOpen}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsLessonDatesDropdownOpen(false)}
+              >
+                <TouchableOpacity
+                  style={styles.lessonDatesOverlay}
+                  activeOpacity={1}
+                  onPress={() => setIsLessonDatesDropdownOpen(false)}
+                >
+                  <View style={styles.lessonDatesModal}>
+                    <Text style={styles.lessonDatesTitle}>בחר תאריך שיעור</Text>
+                    <FlatList
+                      data={availableLessonDates}
+                      keyExtractor={(item) => item?.date || String(Math.random())}
+                      style={styles.lessonDatesList}
+                      ListEmptyComponent={
+                        <Text style={{ textAlign: 'center', color: '#888', padding: 20, fontSize: 15 }}>
+                          אין שיעורים מתוזמנים לילד זה
+                        </Text>
                       }
-                    }}
-                  />
-
-                  <View style={styles.iosDateActionsRow}>
-                    <TouchableOpacity style={styles.iosDateActionSecondary} activeOpacity={0.85} onPress={cancelIosDateSelection}>
-                      <Text style={styles.iosDateActionSecondaryText}>ביטול</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.iosDateActionPrimary} activeOpacity={0.85} onPress={confirmIosDateSelection}>
-                      <Text style={styles.iosDateActionPrimaryText}>אישור</Text>
+                      renderItem={({ item }) => {
+                        const isSelected = toIsoDateString(reportDate) === item?.date;
+                        return (
+                          <TouchableOpacity
+                            style={[styles.lessonDateItem, isSelected && styles.lessonDateItemSelected]}
+                            activeOpacity={0.7}
+                            onPress={() => selectLessonDate(item?.date)}
+                          >
+                            <Text style={[styles.lessonDateText, isSelected && styles.lessonDateTextSelected]}>
+                              {formatReportDate(item?.date)} - {item?.meetingType || 'אישי'}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      }}
+                    />
+                    <TouchableOpacity
+                      style={styles.lessonDatesCloseBtn}
+                      activeOpacity={0.8}
+                      onPress={() => setIsLessonDatesDropdownOpen(false)}
+                    >
+                      <Text style={styles.lessonDatesCloseBtnText}>ביטול</Text>
                     </TouchableOpacity>
                   </View>
-                </View>
-              ) : null}
+                </TouchableOpacity>
+              </Modal>
             </View>
           )}
         </View>
@@ -920,13 +1250,163 @@ export default function InstructorProgressReport({ navigation, route }) {
 
         {/* Metrics Card */}
         <AppCard useBlur blurIntensity={25} blurTint="dark" style={[styles.metricsCard, isAttendanceAbsent && styles.disabledCard]}>
-          <Text style={styles.sectionTitle}>מדדי התקדמות</Text>
+          <Text style={styles.sectionTitle}>{mode === 'readable' ? 'תכנית עבודה מותאמת לילד' : 'מדדי התקדמות'}</Text>
           {mode === 'readable' ? (
-            readableMetrics.map((item) => <ReadOnlyBar key={item.label} label={item.label} value={item.value} />)
+            <View style={styles.recommendationWrap}>
+              {isLoadingPlanRecommendation ? (
+                <Text style={styles.notesReadMetaText}>מייצר סדר תרגילים אישי...</Text>
+              ) : planRecommendationError ? (
+                <Text style={[styles.notesReadText, styles.notesReadErrorText]}>{planRecommendationError}</Text>
+              ) : (
+                <View>
+                  <View style={{ marginBottom: 24 }}>
+                    <View style={{ flexDirection: Platform.OS === 'web' ? 'row-reverse' : 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600', textAlign: Platform.OS === 'web' ? 'right' : 'left' }}>מעקב חשיפה לתרגילים</Text>
+                      <Text style={{ color: '#00d4ff', fontSize: 16, fontWeight: '700' }}>{Number(planRecommendation?.coveragePercent || 0)}%</Text>
+                    </View>
+                    <View style={{ height: 8, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden', flexDirection: Platform.OS === 'web' ? 'row' : 'row-reverse' }}>
+                      <LinearGradient
+                        colors={['#00d4ff', '#0099cc']}
+                        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                        style={{ width: `${Number(planRecommendation?.coveragePercent || 0)}%`, height: '100%' }}
+                      />
+                    </View>
+                    <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 6, textAlign: Platform.OS === 'web' ? 'right' : 'left' }}>
+                      הילד נחשף ל-{Number(planRecommendation?.completedExercises || 0)} מתוך {Number(planRecommendation?.totalExercises || 0)} התרגילים הכלליים.
+                    </Text>
+                  </View>
+
+                  <View style={[styles.nextExerciseBox, { borderColor: 'rgba(0, 212, 255, 0.4)', borderWidth: 1, backgroundColor: 'rgba(0,212,255,0.08)', borderRadius: 16, padding: 16, marginBottom: 28 }]}>
+                    <View style={{ flexDirection: Platform.OS === 'web' ? 'row-reverse' : 'row', alignItems: 'center', marginBottom: 10, gap: 10 }}>
+                      <Text style={{ fontSize: 24 }}>🎯</Text>
+                      <Text style={{ color: '#00d4ff', fontSize: 18, fontWeight: 'bold' }}>היעד הבא המומלץ</Text>
+                    </View>
+                    <Text style={[styles.nextExerciseName, { fontSize: 20, marginBottom: 8, textAlign: Platform.OS === 'web' ? 'right' : 'left', color: '#fff' }]}>{getExerciseTitle(planRecommendation?.nextExercise)}</Text>
+                    <Text style={[styles.nextExerciseReason, { color: 'rgba(255,255,255,0.8)', fontSize: 14, textAlign: Platform.OS === 'web' ? 'right' : 'left', lineHeight: 20 }]}>{String(planRecommendation?.nextExercise?.reason || 'ההמלצה מבוססת על הקשיים הנוכחיים והיסטוריית הדיווחים.').trim()}</Text>
+                  </View>
+
+                  <Text style={[styles.planListTitle, { fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 16, textAlign: Platform.OS === 'web' ? 'right' : 'left' }]}>📋 סדר עדיפויות להמשך עבודה</Text>
+                  {(Array.isArray(planRecommendation?.orderedExercises) ? planRecommendation.orderedExercises : []).slice(0, 8).map((item, index) => (
+                    <View 
+                      key={`${item?.exerciseKey || index}`} 
+                      style={[
+                        styles.planRow, 
+                        { 
+                          backgroundColor: 'rgba(255, 255, 255, 0.06)', 
+                          borderRadius: 12, 
+                          padding: 12, 
+                          marginBottom: 10, 
+                          flexDirection: Platform.OS === 'web' ? 'row-reverse' : 'row', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center', 
+                          columnGap: 12
+                        }
+                      ]}
+                    >
+                      {/* Badge (always visual right) */}
+                      <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: index === 0 ? '#00d4ff' : 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }}>
+                        <Text style={{ color: index === 0 ? '#000' : '#fff', fontWeight: 'bold', fontSize: 14 }}>{index + 1}</Text>
+                      </View>
+
+                      {/* Text Title (always visual middle) */}
+                      <Text 
+                        style={[
+                          styles.planRowText, 
+                          { 
+                            color: '#fff', 
+                            fontSize: 16, 
+                            fontWeight: '600', 
+                            flex: 1, 
+                            textAlign: Platform.OS === 'web' ? 'right' : 'left' 
+                          }
+                        ]} 
+                        numberOfLines={2}
+                      >
+                        {getExerciseTitle(item)}
+                      </Text>
+
+                      {/* Meta Pill (always visual left) */}
+                      <View style={{ backgroundColor: item?.completedCount > 0 ? 'rgba(0, 212, 255, 0.15)' : 'rgba(255, 255, 255, 0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, flexShrink: 0 }}>
+                        <Text style={[styles.planRowMeta, { color: item?.completedCount > 0 ? '#00d4ff' : 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600' }]} numberOfLines={1}>
+                          {item?.completedCount > 0 ? `תורגל ${item.completedCount} פעמים` : 'טרם תורגל'}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
           ) : (
             <View>
+              <Text style={styles.exercisePickerTitle}>בחר תרגיל פעיל</Text>
+              <View style={styles.exercisePickerWrap}>
+                {exerciseCatalog.map((exercise) => {
+                  const dbStat = exerciseDbStats[exercise.key];
+                  const dbPercent = dbStat?.percent || 0;
+                  const dbCount = dbStat?.reportCount || 0;
+                  const dbAvgSum = dbStat?.avgSum || 0;
+
+                  // Blend current slider values into the historical average
+                  const currentMetrics = exerciseStore[exercise.key]?.metrics || [];
+                  const activeMetrics = currentMetrics.filter((m) => m?.isIncluded !== false);
+                  const hasCurrentInput = activeMetrics.some((m) => m?.value > 0);
+
+                  let exercisePercent = dbPercent;
+                  if (hasCurrentInput && activeMetrics.length > 0) {
+                    const totalPossibleMetrics = exercise.metrics?.length || 10;
+                    const sumOfRatings = activeMetrics.reduce((s, m) => s + normalizeProgressValue(m?.value), 0);
+                    const currentAvg = sumOfRatings / totalPossibleMetrics;
+                    const blendedAvg = (dbAvgSum + currentAvg) / (dbCount + 1);
+                    exercisePercent = Math.max(0, Math.min(100, Math.round((blendedAvg / RATING_MAX) * 100)));
+                  }
+
+                  const isSelected = selectedExerciseKey === exercise.key;
+
+                  return (
+                    <TouchableOpacity
+                      key={exercise.key}
+                      activeOpacity={0.9}
+                      onPress={() => selectExercise(exercise.key)}
+                      style={[styles.exerciseChip, isSelected && styles.exerciseChipActive]}
+                    >
+                      <Text style={[styles.exerciseChipPercent, isSelected && styles.exerciseChipPercentActive]}>{exercisePercent}%</Text>
+                      <Text style={[styles.exerciseChipText, isSelected && styles.exerciseChipTextActive]}>{exercise.title}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.selectedExerciseBox}>
+                <Text style={styles.selectedExerciseLabel}>התרגיל הנוכחי</Text>
+                <Text style={styles.selectedExerciseTitle}>{selectedExercise?.title || getExerciseTitleByKey(selectedExerciseKey)}</Text>
+                <Text style={styles.selectedExerciseMeta}>
+                  התקדמות: {(() => {
+                    const stat = exerciseDbStats[selectedExerciseKey];
+                    const dbP = stat?.percent || 0;
+                    const dbC = stat?.reportCount || 0;
+                    const dbS = stat?.avgSum || 0;
+                    const active = metrics.filter((m) => m?.isIncluded !== false);
+                    const touched = active.some((m) => m?.value > 0);
+                    if (touched && active.length > 0) {
+                      const totalPossibleMetrics = exerciseCatalogByKey[selectedExerciseKey]?.metrics?.length || 10;
+                      const sumOfRatings = active.reduce((s, m) => s + normalizeProgressValue(m?.value), 0);
+                      const curAvg = sumOfRatings / totalPossibleMetrics;
+                      return Math.max(0, Math.min(100, Math.round(((dbS + curAvg) / (dbC + 1) / RATING_MAX) * 100)));
+                    }
+                    return dbP;
+                  })()}% | מדדים: {metrics.length}
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setSelectedExerciseKey((prev) => prev)}
+                  style={styles.selectedExerciseHint}
+                >
+                  <Text style={styles.selectedExerciseHintText}>לחץ על כרטיס אחר כדי לעבור לתרגיל אחר</Text>
+                </TouchableOpacity>
+              </View>
+
               {metrics.every((item) => item?.isIncluded === false) ? (
-                <Text style={styles.noMetricsText}>לא נבחרו מדדים לדיווח הנוכחי.</Text>
+                <Text style={styles.noMetricsText}>לא נבחרו מדדים לתרגיל הנוכחי.</Text>
               ) : null}
 
               {metrics.map((item, idx) => {
@@ -936,7 +1416,7 @@ export default function InstructorProgressReport({ navigation, route }) {
 
                 return (
                   <WritableBar
-                    key={item.label}
+                    key={`${selectedExerciseKey}-${item.label}`}
                     label={item.label}
                     value={item.value}
                     onChange={(nv) => updateMetric(idx, nv)}
@@ -950,7 +1430,7 @@ export default function InstructorProgressReport({ navigation, route }) {
 
               {metrics.some((item) => item?.isIncluded === false) ? (
                 <View style={styles.removedMetricsWrap}>
-                  <Text style={styles.removedMetricsTitle}>מדדים שהוסרו מהדיווח הזה (לחץ להחזרה):</Text>
+                  <Text style={styles.removedMetricsTitle}>מדדים שהוסרו מהתרגיל הזה (לחץ להחזרה):</Text>
                   <View style={styles.removedMetricsList}>
                     {metrics.map((item, idx) => {
                       if (item?.isIncluded !== false) {
@@ -959,7 +1439,7 @@ export default function InstructorProgressReport({ navigation, route }) {
 
                       return (
                         <TouchableOpacity
-                          key={`restore-${item.label}`}
+                          key={`restore-${selectedExerciseKey}-${item.label}`}
                           activeOpacity={0.85}
                           onPress={() => setMetricIncluded(idx, true)}
                           disabled={isAttendanceAbsent}
@@ -985,43 +1465,45 @@ export default function InstructorProgressReport({ navigation, route }) {
             }
           }}
         >
-        <AppCard useBlur blurIntensity={25} blurTint="dark" style={[styles.notesCard, isAttendanceAbsent && styles.disabledCard]}>
-          <Text style={styles.sectionTitle}>הערות של הבינה המלאכותית</Text>
-          {mode === 'readable' ? (
-            <View style={styles.notesReadBox}>
-              {isLoadingReadableSummary ? (
-                <Text style={styles.notesReadMetaText}>מייצר סיכום AI מכל הדיווחים של הילד...</Text>
-              ) : readableSummaryError ? (
-                <Text style={[styles.notesReadText, styles.notesReadErrorText]}>{readableSummaryError}</Text>
-              ) : (
-                <View>
-                  <Text style={styles.notesReadText}>{readableAiSummary}</Text>
-                  <Text style={styles.notesReadSourceText}>
-                    {readableAiSummarySource === 'ai'
-                      ? 'הסיכום נוצר אוטומטית בעזרת AI לפי כלל הדיווחים ההיסטוריים.'
-                      : 'הסיכום נוצר מנתוני הדיווחים הקיימים.'}
-                  </Text>
-                </View>
-              )}
-            </View>
-          ) : (
-            <TextInput
-              style={[styles.notesInput, isAttendanceAbsent && styles.notesInputDisabled]}
-              value={notes}
-              onChangeText={setNotes}
-              editable={!isAttendanceAbsent}
-              placeholder={isAttendanceAbsent ? 'הילד לא נכח בפגישה - הערות נעולות.' : 'הכנס הערות על הפגישה הנוכחית...'}
-              placeholderTextColor="rgba(255,255,255,0.35)"
-              multiline
-              ref={notesInputRef}
-              onFocus={() => {
-                setTimeout(() => {
-                  scrollNotesInputAboveKeyboard();
-                }, 90);
-              }}
-            />
-          )}
-        </AppCard>
+          <AppCard useBlur blurIntensity={25} blurTint="dark" style={[styles.notesCard, isAttendanceAbsent && styles.disabledCard]}>
+            <Text style={styles.sectionTitle}>
+              {mode === 'readable' ? 'סיכום של הבינה המלאכותית' : 'הערות של המדריך (אופציונלי)'}
+            </Text>
+            {mode === 'readable' ? (
+              <View style={styles.notesReadBox}>
+                {isLoadingReadableSummary ? (
+                  <Text style={styles.notesReadMetaText}>מייצר סיכום AI מכל הדיווחים של הילד...</Text>
+                ) : readableSummaryError ? (
+                  <Text style={[styles.notesReadText, styles.notesReadErrorText]}>{readableSummaryError}</Text>
+                ) : (
+                  <View>
+                    <Text style={styles.notesReadText}>{readableAiSummary}</Text>
+                    <Text style={styles.notesReadSourceText}>
+                      {readableAiSummarySource === 'ai'
+                        ? 'הסיכום נוצר אוטומטית בעזרת AI לפי כלל הדיווחים ההיסטוריים.'
+                        : 'הסיכום נוצר מנתוני הדיווחים הקיימים.'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <TextInput
+                style={[styles.notesInput, isAttendanceAbsent && styles.notesInputDisabled]}
+                value={notes}
+                onChangeText={setNotes}
+                editable={!isAttendanceAbsent}
+                placeholder={isAttendanceAbsent ? 'הילד לא נכח בפגישה - הערות נעולות.' : 'הכנס הערות על הפגישה הנוכחית...'}
+                placeholderTextColor="rgba(255,255,255,0.35)"
+                multiline
+                ref={notesInputRef}
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollNotesInputAboveKeyboard();
+                  }, 90);
+                }}
+              />
+            )}
+          </AppCard>
         </View>
 
         {/* Save Button (writable only) */}
@@ -1032,10 +1514,11 @@ export default function InstructorProgressReport({ navigation, route }) {
             textStyle={styles.saveBtnText}
             gradientStyle={styles.saveBtnGradient}
             disabled={isSaving}
-            onPress={saveReport}
+            onPress={() => saveReport()}
           />
         )}
-      </Animated.ScrollView>
+        </Animated.ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -1045,38 +1528,40 @@ export default function InstructorProgressReport({ navigation, route }) {
 // ========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgDeep },
-  scrollContent: { paddingTop: 110, paddingBottom: 60, paddingHorizontal: 20 },
-  waveContainer: { position: 'absolute', bottom: 0, left: 0, width: 2400, height: 150, zIndex: 0 },
-  bubbleWrapper: { position: 'absolute', zIndex: 1 },
+  scrollContent: { 
+    paddingTop: Platform.OS === 'ios' ? 120 : (StatusBar.currentHeight || 20) + 70, 
+    paddingBottom: 60, 
+    paddingHorizontal: 20 
+  },
+  waveContainer: { position: 'absolute', bottom: 0, left: (width - 2400) / 2, width: 2400, height: 150, zIndex: 0 },
 
   // Navbar
   navbar: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    paddingTop: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight || 20) + 15,
-    paddingBottom: 15, paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 42 : (StatusBar.currentHeight || 20) + 6,
+    paddingBottom: 8, paddingHorizontal: 16,
     flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center',
     zIndex: 100,
     borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)',
   },
   backButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.24)',
-    alignItems: 'center',
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   backButtonIcon: {
-    color: '#FFFFFF',
-    fontSize: 34,
-    fontWeight: '700',
-    lineHeight: 34,
+    color: '#def6ff',
+    fontSize: 22,
+    textAlign: 'center',
   },
 
   // Page Header
-  pageHeader: { alignItems: 'center', marginBottom: 24, zIndex: 10 },
+  pageHeader: { alignItems: 'center', marginBottom: 44, zIndex: 10 },
   avatarGlow: {
     width: 84,
     height: 84,
@@ -1122,7 +1607,7 @@ const styles = StyleSheet.create({
     marginBottom: 16, borderWidth: 1, borderColor: 'rgba(0, 212, 255, 0.2)',
     zIndex: 10,
   },
-  infoText: { color: 'rgba(255,255,255,0.8)', textAlign: 'right', writingDirection: 'rtl', fontSize: 13, fontWeight: '600' },
+  infoText: { color: 'rgba(255,255,255,0.8)', textAlign: Platform.OS === 'web' ? 'right' : 'left', writingDirection: 'rtl', fontSize: 13, fontWeight: '600' },
   readableInfoMetaText: {
     marginTop: 6,
     color: 'rgba(255,255,255,0.65)',
@@ -1147,7 +1632,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   iosDateActionsRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     gap: 10,
     paddingHorizontal: 10,
@@ -1234,7 +1719,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.72)',
     fontSize: 12,
     lineHeight: 18,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
 
@@ -1244,13 +1729,179 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
   },
-  sectionTitle: { color: '#fff', fontSize: 20, fontWeight: '800', writingDirection: 'rtl', textAlign: 'right', marginBottom: 16 },
+  sectionTitle: { color: '#fff', fontSize: 20, fontWeight: '800', writingDirection: 'rtl', textAlign: Platform.OS === 'web' ? 'right' : 'left', marginBottom: 16 },
+  exercisePickerTitle: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+    marginBottom: 10,
+  },
+  exercisePickerWrap: {
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 14,
+  },
+  exerciseChip: {
+    minWidth: '48%',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  exerciseChipActive: {
+    borderColor: '#00d4ff',
+    backgroundColor: 'rgba(0, 212, 255, 0.16)',
+  },
+  exerciseChipPercent: {
+    color: '#d4e2ea',
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+  },
+  exerciseChipPercentActive: {
+    color: '#d6f7ff',
+  },
+  exerciseChipText: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+    marginTop: 4,
+  },
+  exerciseChipTextActive: {
+    color: '#ffffff',
+  },
+  selectedExerciseBox: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.2)',
+    backgroundColor: 'rgba(0, 212, 255, 0.08)',
+    padding: 14,
+    marginBottom: 14,
+  },
+  selectedExerciseLabel: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+    marginBottom: 4,
+  },
+  selectedExerciseTitle: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+  },
+  selectedExerciseMeta: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+    marginTop: 6,
+  },
+  selectedExerciseHint: {
+    marginTop: 8,
+  },
+  selectedExerciseHintText: {
+    color: '#9fefff',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+  },
+  recommendationWrap: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  planHeaderRow: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  planHeaderMeta: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  nextExerciseBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.35)',
+    backgroundColor: 'rgba(0, 212, 255, 0.12)',
+    padding: 12,
+    marginBottom: 12,
+  },
+  nextExerciseTitle: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+    marginBottom: 4,
+  },
+  nextExerciseName: {
+    color: '#d6f7ff',
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+    marginBottom: 6,
+  },
+  nextExerciseReason: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+  },
+  planListTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+    marginBottom: 8,
+  },
+  planRow: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  planRowText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
+    writingDirection: 'rtl',
+    flex: 1,
+  },
+  planRowMeta: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    marginLeft: 8,
+  },
 
   // Metric rows
   metricRow: { marginBottom: 18 },
-  metricLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  metricLabelActionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexShrink: 1, marginLeft: 12 },
-  metricLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '600', writingDirection: 'rtl', textAlign: 'right', flexShrink: 1 },
+  metricLabelRow: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  metricLabelActionsRow: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'flex-end', flexShrink: 1, marginLeft: 12 },
+  metricLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '600', writingDirection: 'rtl', textAlign: Platform.OS === 'web' ? 'right' : 'left', flexShrink: 1 },
   metricLabelDisabled: { color: 'rgba(255,255,255,0.45)' },
   metricPercent: { color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '800' },
   metricPercentDisabled: { color: 'rgba(255,255,255,0.45)' },
@@ -1280,7 +1931,7 @@ const styles = StyleSheet.create({
   noMetricsText: {
     color: 'rgba(255,255,255,0.72)',
     fontSize: 13,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
     marginBottom: 10,
   },
@@ -1290,7 +1941,7 @@ const styles = StyleSheet.create({
   removedMetricsTitle: {
     color: 'rgba(255,255,255,0.64)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
     marginBottom: 8,
   },
@@ -1323,12 +1974,12 @@ const styles = StyleSheet.create({
   },
 
   // Read-only track
-  trackOuter: { height: 10, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' },
+  trackOuter: { height: 10, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden', direction: 'ltr' },
   trackFill: { height: '100%', borderRadius: 6 },
 
   // Writable track
-  trackTouchZone: { height: 36, justifyContent: 'center' },
-  trackOuterWritable: { height: 10, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' },
+  trackTouchZone: { height: 36, justifyContent: 'center', marginHorizontal: 14, direction: 'ltr' },
+  trackOuterWritable: { height: 10, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden', marginHorizontal: -14, direction: 'ltr' },
   trackOuterWritableDisabled: {
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
@@ -1362,10 +2013,10 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.72)',
     fontSize: 13,
     lineHeight: 21,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
-  notesReadText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, lineHeight: 22, textAlign: 'right', writingDirection: 'rtl' },
+  notesReadText: { color: '#ffffff', fontSize: 16, lineHeight: 28, textAlign: Platform.OS === 'web' ? 'right' : 'left', writingDirection: 'rtl' },
   notesReadErrorText: {
     color: '#ffd3d3',
   },
@@ -1373,7 +2024,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     color: 'rgba(255,255,255,0.5)',
     fontSize: 12,
-    textAlign: 'right',
+    textAlign: Platform.OS === 'web' ? 'right' : 'left',
     writingDirection: 'rtl',
   },
   notesInput: {
@@ -1395,5 +2046,73 @@ const styles = StyleSheet.create({
   saveBtn: { borderRadius: 20, marginBottom: 12, zIndex: 10, ...shadows.glowPrimary },
   saveBtnText: { color: '#001529', fontSize: 17, fontWeight: '800', writingDirection: 'rtl' },
   saveBtnGradient: { paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
+
+  // Lesson Dates Dropdown
+  lessonDatesOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  lessonDatesModal: {
+    width: '85%',
+    maxHeight: '70%',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+  },
+  lessonDatesTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#001529',
+    textAlign: 'center',
+    marginBottom: 14,
+    writingDirection: 'rtl',
+  },
+  lessonDatesList: {
+    maxHeight: 300,
+  },
+  lessonDateItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginBottom: 6,
+    backgroundColor: '#f0f7fc',
+    borderWidth: 1,
+    borderColor: '#e0eaf3',
+  },
+  lessonDateItemSelected: {
+    backgroundColor: '#d4f4ff',
+    borderColor: '#00AEDD',
+  },
+  lessonDateText: {
+    fontSize: 15,
+    color: '#1a3a52',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  lessonDateTextSelected: {
+    color: '#006890',
+    fontWeight: '700',
+  },
+  lessonDatesCloseBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#EEF4FA',
+    borderWidth: 1,
+    borderColor: '#B7C8D8',
+    alignItems: 'center',
+  },
+  lessonDatesCloseBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#3F5F7D',
+  },
 });
 

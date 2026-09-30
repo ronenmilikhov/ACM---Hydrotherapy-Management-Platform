@@ -21,7 +21,11 @@ namespace ReactServerSide.Controllers
             "תנועתיות וקואורדינציה",
             "יציבה וציפה",
             "תקשורת במים (ושיתוף פעולה)",
-            "התמדה ומאמץ"
+            "התמדה ומאמץ",
+            "יוזמה",
+            "קשב וריכוז",
+            "תגובה להוראות",
+            "עצמאות בתרגיל"
         };
 
         private static readonly Dictionary<string, string> MetricAliasMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -181,7 +185,7 @@ namespace ReactServerSide.Controllers
             }
 
             List<ChildReportRecord> reports = _db.GetChildReportsForMetrics(childId);
-            return Ok(reports);
+            return Ok(reports.Select(MapReportToResponse));
         }
 
         [HttpPost("{parentId:int}/children/{childId:int}/reports/summary")]
@@ -224,62 +228,53 @@ namespace ReactServerSide.Controllers
                 });
             }
 
-            string primaryApiKey = (_configuration["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? string.Empty).Trim();
-            string secondaryApiKey = (_configuration["OpenAI:ApiKeySecondary"] ?? _configuration["OpenAI:SecondaryApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY_SECONDARY") ?? string.Empty).Trim();
-            string tertiaryApiKey = (_configuration["OpenAI:ApiKeyTertiary"] ?? _configuration["OpenAI:ApiKeyThird"] ?? _configuration["OpenAI:ThirdApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY_TERTIARY") ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY_THIRD") ?? string.Empty).Trim();
+            string apiKey = (Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? _configuration["OpenAI:ApiKey"] ?? string.Empty).Trim();
 
-            List<string> apiKeys = new List<string>();
-            if (!string.IsNullOrWhiteSpace(primaryApiKey))
+            if (string.IsNullOrWhiteSpace(apiKey))
             {
-                apiKeys.Add(primaryApiKey);
+                return StatusCode(500, new { message = "לא הוגדרו מפתחות API תקינים עבור שירות ה-AI." });
             }
 
-            if (!string.IsNullOrWhiteSpace(secondaryApiKey) &&
-                !string.Equals(primaryApiKey, secondaryApiKey, StringComparison.Ordinal))
-            {
-                apiKeys.Add(secondaryApiKey);
-            }
-
-            if (!string.IsNullOrWhiteSpace(tertiaryApiKey)
-                && !string.Equals(primaryApiKey, tertiaryApiKey, StringComparison.Ordinal)
-                && !string.Equals(secondaryApiKey, tertiaryApiKey, StringComparison.Ordinal))
-            {
-                apiKeys.Add(tertiaryApiKey);
-            }
+            string apiUrl = (Environment.GetEnvironmentVariable("OPENAI_BASE_URL") ?? Environment.GetEnvironmentVariable("OPENAI_API_URL") ?? _configuration["OpenAI:BaseUrl"] ?? "https://api.openai.com/v1/chat/completions").Trim();
+            string model = (Environment.GetEnvironmentVariable("OPENAI_MODEL") ?? _configuration["OpenAI:Model"] ?? "google/gemini-2.5-flash").Trim();
 
             string medianMetricsContext = BuildMedianMetricsContext(medianMetrics);
             string recentPresentCommentsContext = BuildLastPresentInstructorCommentsContext(reports, 3);
             double overallMetricAverage = CalculateOverallMetricAverage(medianMetrics);
 
-            if (apiKeys.Count == 0)
+            string systemPrompt = (_configuration["OpenAI:ParentSystemPrompt"] ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(systemPrompt))
             {
-                return Ok(new
-                {
-                    summary = BuildFallbackSummaryFromReports(childDisplayName, reports, medianMetrics),
-                    reportsCount = reports.Count,
-                    source = "fallback",
-                    warning = "Missing API key. Configure OpenAI:ApiKey and optional OpenAI:ApiKeySecondary in appsettings (or OPENAI_API_KEY / OPENAI_API_KEY_SECONDARY environment variables).",
-                    medianMetrics
-                });
+                systemPrompt = BuildChildProgressSummarySystemPrompt();
             }
 
-            string apiUrl = (_configuration["OpenAI:BaseUrl"] ?? "https://api.openai.com/v1/chat/completions").Trim();
-            string model = (_configuration["OpenAI:Model"] ?? "gpt-4.1-mini").Trim();
+            string userPromptTemplate = (_configuration["OpenAI:ParentUserPromptTemplate"] ?? string.Empty).Trim();
+            string userPrompt;
+            if (!string.IsNullOrWhiteSpace(userPromptTemplate))
+            {
+                userPrompt = userPromptTemplate
+                    .Replace("{childDisplayName}", childDisplayName)
+                    .Replace("{overallMetricAverage}", overallMetricAverage.ToString("0.0", CultureInfo.InvariantCulture))
+                    .Replace("{mediansContext}", medianMetricsContext)
+                    .Replace("{recentPresentCommentsContext}", recentPresentCommentsContext);
+            }
+            else
+            {
+                userPrompt = BuildChildProgressSummaryUserPrompt(
+                    childDisplayName,
+                    childId,
+                    medianMetricsContext,
+                    recentPresentCommentsContext,
+                    overallMetricAverage);
+            }
 
-            string systemPrompt = BuildChildProgressSummarySystemPrompt();
-            string userPrompt = BuildChildProgressSummaryUserPrompt(
-                childDisplayName,
-                childId,
-                medianMetricsContext,
-                recentPresentCommentsContext,
-                overallMetricAverage);
-
+            HttpClient client = _httpClientFactory.CreateClient();
             object requestPayload = new
             {
-                model,
-                temperature = 0.1,
-                top_p = 0.2,
-                max_tokens = 250,
+                model = model,
+                temperature = 0.7,
+                top_p = 0.9,
+                max_tokens = 1250,
                 messages = new object[]
                 {
                     new { role = "system", content = systemPrompt },
@@ -287,38 +282,24 @@ namespace ReactServerSide.Controllers
                 }
             };
 
-            HttpClient client = _httpClientFactory.CreateClient();
             string requestJson = JsonSerializer.Serialize(requestPayload);
-            List<string> failedAttempts = new List<string>();
+            (bool isSuccess, string summary, string failureReason) =
+                await TryCreateSummaryWithApiKeyAsync(client, apiUrl, apiKey, requestJson);
 
-            for (int index = 0; index < apiKeys.Count; index += 1)
+            if (isSuccess)
             {
-                string currentApiKey = apiKeys[index];
-                (bool isSuccess, string summary, string failureReason) =
-                    await TryCreateSummaryWithApiKeyAsync(client, apiUrl, currentApiKey, requestJson);
-
-                if (isSuccess)
+                return Ok(new
                 {
-                    return Ok(new
-                    {
-                        summary,
-                        reportsCount = reports.Count,
-                        source = "ai",
-                        medianMetrics
-                    });
-                }
-
-                failedAttempts.Add($"key #{index + 1}: {failureReason}");
+                    summary,
+                    reportsCount = reports.Count,
+                    source = "ai",
+                    medianMetrics
+                });
             }
 
-            return Ok(new
+            return StatusCode(500, new
             {
-                summary = BuildFallbackSummaryFromReports(childDisplayName, reports, medianMetrics),
-                reportsCount = reports.Count,
-                source = "fallback",
-                warning = "הבינה המלאכותית לא עבדה כרגע, הוצג סיכום גיבוי מבוסס נתונים.",
-                details = failedAttempts,
-                medianMetrics
+                message = "שירות ה-AI לא זמין כרגע או נכשל: " + failureReason
             });
         }
 
@@ -383,7 +364,8 @@ namespace ReactServerSide.Controllers
                 meetingDate,
                 startTime,
                 endTime,
-                request.Notes ?? string.Empty);
+                request.Notes ?? string.Empty,
+                null);
 
             ChildRecord? childRecord = _db.GetChildById(request.ChildId);
             string childDisplayName = childRecord == null
@@ -585,7 +567,8 @@ namespace ReactServerSide.Controllers
                 startTime = FormatTimeAsHourMinute(lesson.StartTime),
                 endTime = FormatTimeAsHourMinute(lesson.EndTime),
                 status = lesson.Status,
-                notes = lesson.Notes
+                notes = lesson.Notes,
+                targetMetric = lesson.TargetMetric
             }));
         }
 
@@ -706,12 +689,7 @@ namespace ReactServerSide.Controllers
 
         private static string BuildChildProgressSummarySystemPrompt()
         {
-            return @"
-    אתה מדריך שחייה מנוסה שכותב משוב ברור, נעים ומדויק להורים.
-    כתוב בעברית בלבד, ללא אנגלית וללא הסברים על ההנחיות.
-    החזר רק את הסיכום עצמו ב-4 שורות נפרדות (כל שורה משפט אחד).
-    אין רשימות ואין כותרות.
-".Trim();
+            return "אתה מדריך שחייה רגיש, סבלני ומעצים שכותב משוב התקדמות קצר להורה. חשוב מאוד: אל תכתוב רשימה של עובדות יבשות או מספרים! כתוב טקסט זורם, חם, אישי ומעודד. גם כשהציונים נמוכים, התמקד תמיד בתהליך הלמידה ובמאמץ של הילד בצורה הכי חיובית שיש. אל תשתמש במילים כמו 'נמוך', 'לא קיים', או 'אפס'. חובה להחזיר בדיוק 4 שורות (רד שורה אחרי כל משפט), ללא מספור (1,2,3). כתוב בעברית בלבד ובטון של שיחה נעימה.";
         }
 
         private static string BuildChildProgressSummaryUserPrompt(
@@ -721,22 +699,18 @@ namespace ReactServerSide.Controllers
             string recentPresentCommentsContext,
             double overallMetricAverage)
         {
-            return $@"
-ילד: {childDisplayName}
-ממוצע: {overallMetricAverage.ToString("0.0", CultureInfo.InvariantCulture)}/10
-מדדים:
+            return $@"כתוב פסקה קצרה, אנושית, חמה ומעצימה עבור הילד/ה {childDisplayName}.
+ממוצע ציונים כרגע: {overallMetricAverage.ToString("0.0", CultureInfo.InvariantCulture)} מתוך 5.
+פירוט מדדים:
 {mediansContext}
 הערות אחרונות:
 {recentPresentCommentsContext}
 
-משימה:
-כתוב סיכום ב-4 שורות בדיוק (כל שורה משפט קצר אחד), בעברית בלבד.
-שורה 1: תיאור כללי חיובי + ממוצע ציונים.
-שורה 2: שתי חוזקות מרכזיות לפי המדדים (בלי לציין ציונים מספריים בשורה זו).
-שורה 3: המלצה עדינה לשיפור אם יש מדד <=6; אם כל המדדים מעל 6 כתוב משפט יציבות והתקדמות.
-שורה 4: המלצה פרקטית וברורה להורה להמשך תרגול בבית (חייב להתחיל ב""להורה מומלץ"" או ""להורה כדאי"").
-אין רשימות, אין כותרות, אין טקסט באנגלית.
-".Trim();
+עליך לכתוב בדיוק 4 משפטים מלאים, וכל משפט חייב להיות בשורה נפרדת (ללא שום מספור בתחילת השורה):
+שורה 1: משפט פתיחה חם ויצירתי שמברך את הילד על המסע שלו במים.
+שורה 2: משפט שמוצא נקודת אור חיובית מההערות או מהמדדים ומחזק עליה (הימנע מציון מספרים יבשים).
+שורה 3: משפט עדין שמספר על מיומנות שאנחנו בונים עכשיו יחד, בקצב שלו, באהבה ובהכלה.
+שורה 4: טיפ מעשי, משעשע או קליל להורים להמשך חיזוק הביטחון בבית. שורה זו חייבת להתחיל במילים: 'להורה מומלץ'.";
         }
 
         private static string BuildLastPresentInstructorCommentsContext(List<ChildReportRecord> reports, int maxComments)
@@ -759,17 +733,12 @@ namespace ReactServerSide.Controllers
                 .OrderByDescending((item) => item.ReportDate)
                 .ThenByDescending((item) => item.ReportId))
             {
-                if (!TryExtractIsPresentAndComment(report.Notes, out bool isPresent, out string comment))
+                if (!report.IsPresent || string.IsNullOrWhiteSpace(report.Comment))
                 {
                     continue;
                 }
 
-                if (!isPresent || string.IsNullOrWhiteSpace(comment))
-                {
-                    continue;
-                }
-
-                comments.Add($"{report.ReportDate:yyyy-MM-dd}: {comment}");
+                comments.Add($"{report.ReportDate:yyyy-MM-dd}: {report.Comment}");
                 if (comments.Count >= safeMaxComments)
                 {
                     break;
@@ -873,7 +842,7 @@ namespace ReactServerSide.Controllers
             StringBuilder builder = new StringBuilder();
             foreach (MetricMedianRecord metric in metrics)
             {
-                builder.AppendLine($"- {metric.Label}: {metric.Value.ToString("0.0", CultureInfo.InvariantCulture)}/10");
+                builder.AppendLine($"- {metric.Label}: {metric.Value.ToString("0.0", CultureInfo.InvariantCulture)}/5");
             }
 
             return builder.ToString().Trim();
@@ -886,7 +855,7 @@ namespace ReactServerSide.Controllers
                 return 0;
             }
 
-            return Math.Round(Math.Clamp(rawValue, 0, 10), MidpointRounding.AwayFromZero);
+            return Math.Round(Math.Clamp(rawValue, 0, 5), MidpointRounding.AwayFromZero);
         }
 
         private static double CalculateOverallMetricAverage(List<MetricMedianRecord> metrics)
@@ -907,21 +876,21 @@ namespace ReactServerSide.Controllers
 
             foreach (ChildReportRecord report in reports)
             {
-                if (string.IsNullOrWhiteSpace(report.Notes))
+                if (!report.IsPresent || string.IsNullOrWhiteSpace(report.Metrics))
                 {
                     continue;
                 }
 
                 try
                 {
-                    using JsonDocument doc = JsonDocument.Parse(report.Notes);
-                    if (!doc.RootElement.TryGetProperty("metrics", out JsonElement metricsElement) || metricsElement.ValueKind != JsonValueKind.Array)
+                    using JsonDocument doc = JsonDocument.Parse(report.Metrics);
+                    if (doc.RootElement.ValueKind != JsonValueKind.Array)
                     {
                         continue;
                     }
 
                     int index = 0;
-                    foreach (JsonElement metric in metricsElement.EnumerateArray())
+                    foreach (JsonElement metric in doc.RootElement.EnumerateArray())
                     {
                         double? parsedValue = TryGetNumericMetricValue(metric);
                         if (!parsedValue.HasValue)
@@ -986,7 +955,7 @@ namespace ReactServerSide.Controllers
                 .Select((metric) => new MetricMedianRecord
                 {
                     Label = metric.Label.Trim(),
-                    Value = Math.Round(Math.Clamp(metric.Value, 0, 10), 1)
+                    Value = Math.Round(Math.Clamp(metric.Value, 0, 5), 1)
                 })
                 .ToList();
 
@@ -1043,6 +1012,34 @@ namespace ReactServerSide.Controllers
             }
 
             return null;
+        }
+
+        private static object MapReportToResponse(ChildReportRecord report)
+        {
+            object parsedMetrics;
+            try
+            {
+                parsedMetrics = JsonSerializer.Deserialize<object>(
+                    string.IsNullOrWhiteSpace(report.Metrics) ? "[]" : report.Metrics) ?? new object[0];
+            }
+            catch
+            {
+                parsedMetrics = new object[0];
+            }
+
+            return new
+            {
+                reportId = report.ReportId,
+                childId = report.ChildId,
+                instructorId = report.InstructorId,
+                groupId = report.GroupId,
+                reportDate = report.ReportDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                exerciseKey = report.ExerciseKey,
+                exerciseTitle = report.ExerciseTitle,
+                isPresent = report.IsPresent,
+                comment = report.Comment,
+                metrics = parsedMetrics
+            };
         }
 
         private static string NormalizeMetricLabel(string label)
@@ -1157,7 +1154,7 @@ namespace ReactServerSide.Controllers
 
                 requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
                 using HttpResponseMessage response = await client.SendAsync(requestMessage, cts.Token);
                 string responseJson = await response.Content.ReadAsStringAsync();
 
@@ -1260,6 +1257,12 @@ namespace ReactServerSide.Controllers
                 return string.Empty;
             }
 
+            rawSummary = rawSummary
+                .Replace("הבוגרים יום", "הבתולת ים")
+                .Replace("בוגרים יום", "בתולת ים")
+                .Replace("הבוגריםיום", "הבתולת ים")
+                .Replace("בוגריםיום", "בתולת ים");
+
             string cleaned = rawSummary
                 .Replace("\r", "\n")
                 .Trim();
@@ -1268,16 +1271,19 @@ namespace ReactServerSide.Controllers
             cleaned = Regex.Replace(cleaned, @"[ \t]+", " ");
             cleaned = Regex.Replace(cleaned, @"\n{2,}", "\n").Trim();
 
-            MatchCollection sentenceMatches = Regex.Matches(cleaned, @"[^.!?\n]+[.!?]?");
+            string[] rawLines = cleaned.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
             List<string> selectedSentences = new List<string>();
 
-            foreach (Match sentenceMatch in sentenceMatches)
+            foreach (string rawLine in rawLines)
             {
-                string sentence = (sentenceMatch.Value ?? string.Empty).Trim();
+                string sentence = rawLine.Trim();
                 if (string.IsNullOrWhiteSpace(sentence))
                 {
                     continue;
                 }
+
+                // Remove numbers if the AI accidentally ignored the prompt
+                sentence = Regex.Replace(sentence, @"^\d+[\.\-\)\*]*\s*", string.Empty);
 
                 int firstHebrewIndex = IndexOfHebrewCharacter(sentence);
                 if (firstHebrewIndex < 0)
@@ -1490,7 +1496,7 @@ namespace ReactServerSide.Controllers
                 .FirstOrDefault();
 
             MetricMedianRecord? weakest = effectiveMedianMetrics
-                .Where((metric) => metric.Value <= 6)
+                .Where((metric) => metric.Value <= 3)
                 .OrderBy((metric) => metric.Value)
                 .ThenBy((metric) => metric.Label)
                 .FirstOrDefault();
@@ -1501,7 +1507,7 @@ namespace ReactServerSide.Controllers
 
             if (hasMetricData)
             {
-                lines.Add($"{childDisplayName} מציג התקדמות יציבה בשיעורי השחייה, עם ממוצע כולל של {overallAverage.ToString("0.0", CultureInfo.InvariantCulture)}/10.");
+                lines.Add($"{childDisplayName} מציג התקדמות יציבה בשיעורי השחייה, עם ממוצע כולל של {overallAverage.ToString("0.0", CultureInfo.InvariantCulture)}/5.");
             }
             else
             {
@@ -1527,7 +1533,7 @@ namespace ReactServerSide.Controllers
             }
             else
             {
-                lines.Add("כל המדדים מעל 6/10, ונראית יציבות טובה ורצף התקדמות חיובי לאורך התקופה האחרונה.");
+                lines.Add("כל המדדים מעל 3/5, ונראית יציבות טובה ורצף התקדמות חיובי לאורך התקופה האחרונה.");
             }
 
             if (!string.IsNullOrWhiteSpace(latestComment))

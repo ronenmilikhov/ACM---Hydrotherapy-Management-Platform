@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   StyleSheet, Text, View, Animated, Dimensions, TouchableOpacity,
   StatusBar, Easing, Platform, TextInput, KeyboardAvoidingView, ScrollView
@@ -48,87 +48,6 @@ const Wave = ({ color, duration, startPosition, d }) => {
   );
 };
 
-// ========================================
-// 2. TRULY INFINITE REINCARNATING BUBBLES
-// ========================================
-const Bubble = () => {
-  const progress = useRef(new Animated.Value(0)).current;
-  const sway = useRef(new Animated.Value(0)).current;
-  const [config, setConfig] = useState({
-    size: Math.random() * 30 + 10,
-    left: Math.random() * width,
-  });
-
-  const durationRef = useRef(Math.random() * 16000 + 14000);
-  const isFirstRun = useRef(true);
-
-  const startFloat = () => {
-    progress.setValue(0);
-    const delay = isFirstRun.current ? Math.random() * 30000 : 0;
-    isFirstRun.current = false;
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: durationRef.current,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        durationRef.current = Math.random() * 16000 + 14000;
-        setConfig({
-          size: Math.random() * 30 + 10,
-          left: Math.random() * width,
-        });
-        startFloat();
-      }
-    });
-  };
-
-  useEffect(() => {
-    startFloat();
-    const swayAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(sway, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: -1, duration: 4000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    );
-    swayAnim.start();
-    return () => { progress.stopAnimation(); sway.stopAnimation(); };
-  }, []);
-
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height + 50, -150] });
-  const opacity = progress.interpolate({ inputRange: [0, 0.1, 0.8, 1], outputRange: [0, 1, 1, 0] });
-  const translateX = sway.interpolate({ inputRange: [-1, 1], outputRange: [-20, 20] });
-
-  return (
-    <Animated.View
-      style={[
-        styles.bubbleWrapper,
-        {
-          width: config.size,
-          height: config.size,
-          borderRadius: config.size / 2,
-          left: config.left,
-          transform: [{ translateY }, { translateX }],
-          opacity,
-        },
-      ]}
-    >
-      <LinearGradient
-        colors={["rgba(255, 255, 255, 0.95)", "rgba(255, 255, 255, 0.1)"]}
-        style={{
-          flex: 1,
-          borderRadius: config.size / 2,
-          borderWidth: 1,
-          borderColor: "rgba(255, 255, 255, 0.4)",
-        }}
-      />
-    </Animated.View>
-  );
-};
 
 // ========================================
 // 3. MAIN COMPONENT
@@ -142,7 +61,6 @@ export default function EditAchievement() {
   const [info, setInfo] = useState(achievement.info);
 
   const onSave = route.params?.onSave;
-  const bubblePool = useMemo(() => Array.from({ length: 5 }).map((_, i) => i), []);
 
   return (
     <View style={styles.container}>
@@ -153,9 +71,6 @@ export default function EditAchievement() {
 
       {/* Surface Water */}
       <LinearGradient colors={['#00aed8', '#007fa7', '#004d73']} style={[StyleSheet.absoluteFill, { opacity: 0.6 }]} />
-
-      {/* Bubbles */}
-      {bubblePool.map((id) => <Bubble key={id} />)}
 
       {/* Bottom Waves */}
       <Wave color="rgba(0, 153, 204, 0.3)" duration={8000} startPosition={0} d="M0,75 C200,45 400,105 600,75 C800,45 1000,105 1200,75 L1200,150 L0,150 Z M1200,75 C1400,45 1600,105 1800,75 C2000,45 2200,105 2400,75 L2400,150 L1200,150 Z" />
@@ -245,8 +160,7 @@ export default function EditAchievement() {
 // ========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgDeep },
-  waveContainer: { position: 'absolute', bottom: 0, left: 0, width: 2400, height: 150, zIndex: 0 },
-  bubbleWrapper: { position: 'absolute', zIndex: 1 },
+  waveContainer: { position: 'absolute', bottom: 0, left: (width - 2400) / 2, width: 2400, height: 150, zIndex: 0 },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',

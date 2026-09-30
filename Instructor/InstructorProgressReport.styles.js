@@ -1,4 +1,4 @@
-import { StyleSheet, StatusBar } from 'react-native';
+import { StyleSheet, StatusBar, Platform } from 'react-native';
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -11,45 +11,45 @@ const styles = StyleSheet.create({
 
   headerWaveBack: {
     position: 'absolute',
-    top: 88,
+    top: 72,
     left: -12,
     right: -12,
-    height: 95,
-    borderRadius: 55,
+    height: 75,
+    borderRadius: 45,
     backgroundColor: 'rgba(131, 190, 232, 0.30)',
   },
   headerWaveFront: {
     position: 'absolute',
-    top: 102,
+    top: 82,
     left: -22,
     right: -18,
-    height: 82,
-    borderRadius: 55,
+    height: 65,
+    borderRadius: 45,
     backgroundColor: 'rgba(149, 207, 244, 0.45)',
   },
 
   header: {
-    paddingTop: (StatusBar.currentHeight || 0) + 14,
-    paddingHorizontal: 18,
+    paddingTop: (StatusBar.currentHeight || 0) + 10,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   iconButton: {
-    width: 48,
+    width: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerIcon: {
-    fontSize: 32,
+    fontSize: 24,
     color: '#1789CD',
-    lineHeight: 34,
+    lineHeight: 26,
     fontWeight: '700',
   },
   searchLabel: {
     color: '#517796',
-    fontSize: 15,
-    marginTop: 2,
+    fontSize: 12,
+    marginTop: 1,
     textAlign: 'center',
     writingDirection: 'rtl',
   },
@@ -58,15 +58,15 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: '#1E7FC0',
-    fontSize: 44,
+    fontSize: 24,
     fontWeight: '700',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   headerSubtitle: {
     color: '#5E7B95',
-    marginTop: 6,
-    fontSize: 15,
+    marginTop: 3,
+    fontSize: 12,
     textAlign: 'center',
     writingDirection: 'rtl',
   },
@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   progressLabelRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: Platform.OS === 'ios' ? 'row-reverse' : 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 4,

@@ -31,18 +31,17 @@ import {
 const { width, height } = Dimensions.get('window');
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 
-/* ============================================================
-   ANIMATED WAVE
-   ============================================================ */
+
 const Wave = ({ color, duration, startPosition, d }) => {
   const translateX = useRef(new Animated.Value(startPosition)).current;
 
   useEffect(() => {
-    const toPos = startPosition === 0 ? -600 : 0;
+    const toPosition = startPosition === 0 ? -600 : 0;
+
     Animated.loop(
       Animated.sequence([
         Animated.timing(translateX, {
-          toValue: toPos,
+          toValue: toPosition,
           duration: duration / 2,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
@@ -55,92 +54,13 @@ const Wave = ({ color, duration, startPosition, d }) => {
         }),
       ]),
     ).start();
-  }, [duration, startPosition]);
+  }, [duration, startPosition, translateX]);
 
   return (
     <Animated.View style={[styles.waveContainer, { transform: [{ translateX }] }]}>
       <Svg width={2400} height={150} viewBox="0 0 2400 150" preserveAspectRatio="none">
         <Path fill={color} d={d} />
       </Svg>
-    </Animated.View>
-  );
-};
-
-/* ============================================================
-   INFINITE REINCARNATING BUBBLES
-   ============================================================ */
-const Bubble = () => {
-  const progress = useRef(new Animated.Value(0)).current;
-  const sway = useRef(new Animated.Value(0)).current;
-
-  const [config, setConfig] = useState({
-    size: Math.random() * 28 + 8,
-    left: Math.random() * width,
-  });
-
-  const durationRef = useRef(Math.random() * 16000 + 14000);
-  const isFirstRun = useRef(true);
-
-  const startFloat = () => {
-    progress.setValue(0);
-    const delay = isFirstRun.current ? Math.random() * 30000 : 0;
-    isFirstRun.current = false;
-
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: durationRef.current,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        durationRef.current = Math.random() * 16000 + 14000;
-        setConfig({
-          size: Math.random() * 28 + 8,
-          left: Math.random() * width,
-        });
-        startFloat();
-      }
-    });
-  };
-
-  useEffect(() => {
-    startFloat();
-    const swayAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(sway, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: -1, duration: 4000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    );
-    swayAnim.start();
-    return () => { progress.stopAnimation(); sway.stopAnimation(); };
-  }, []);
-
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height + 50, -150] });
-  const opacity = progress.interpolate({ inputRange: [0, 0.1, 0.8, 1], outputRange: [0, 1, 1, 0] });
-  const translateXVal = sway.interpolate({ inputRange: [-1, 1], outputRange: [-20, 20] });
-
-  return (
-    <Animated.View
-      style={[
-        styles.bubbleWrapper,
-        {
-          width: config.size,
-          height: config.size,
-          borderRadius: config.size / 2,
-          left: config.left,
-          transform: [{ translateY }, { translateX: translateXVal }],
-          opacity,
-        },
-      ]}
-    >
-      <LinearGradient
-        colors={['rgba(255,255,255,0.85)', 'rgba(255,255,255,0.08)']}
-        style={{ flex: 1, borderRadius: config.size / 2, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' }}
-      />
     </Animated.View>
   );
 };
@@ -172,35 +92,39 @@ const ActivityCard = ({ date, title, desc, icon, index, onPressLessonReport }) =
           style={styles.activityAccent}
         />
 
-        <View style={styles.activityBody}>
-          {/* Icon */}
-          <View style={styles.activityIconWrap}>
-            <LinearGradient
-              colors={['rgba(0,212,255,0.22)', 'rgba(0,153,204,0.08)']}
-              style={styles.activityIconBg}
-            >
-              <Text style={styles.activityIcon}>{icon}</Text>
-            </LinearGradient>
-
-            <TouchableOpacity
-              activeOpacity={0.82}
-              style={styles.lessonReportButton}
-              onPress={onPressLessonReport}
-            >
-              <Text style={styles.lessonReportButtonText}>דו"ח הילד בשיעור זה</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Text */}
-          <View style={styles.activityTextWrap}>
+        <View style={styles.activityHeader}>
+          <View style={styles.activityHeaderRight}>
+            <View style={styles.activityIconBgMini}>
+              <Text style={styles.activityIconMini}>{icon}</Text>
+            </View>
             <Text style={styles.activityTitle}>{title}</Text>
-            <Text style={styles.activityDesc}>{desc}</Text>
           </View>
-
-          {/* Date badge */}
           <View style={styles.activityDateBadge}>
             <Text style={styles.activityDate}>{date}</Text>
           </View>
+        </View>
+
+        <View style={styles.activityContent}>
+          <Text style={styles.activityDesc}>{desc}</Text>
+        </View>
+
+        <View style={styles.activityDivider} />
+
+        <View style={styles.activityFooter}>
+          <TouchableOpacity
+            activeOpacity={0.75}
+            style={styles.activityReportBtn}
+            onPress={onPressLessonReport}
+          >
+            <LinearGradient
+              colors={['rgba(0,212,255,0.22)', 'rgba(0,120,180,0.15)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.activityReportBtnGradient}
+            >
+              <Text style={styles.activityReportBtnText}>דו"ח הילד בשיעור זה 📊</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       </BlurView>
     </Animated.View>
@@ -236,10 +160,14 @@ const REPORT_METRIC_LABELS = [
   'יציבה וציפה',
   'תקשורת במים (ושיתוף פעולה)',
   'התמדה ומאמץ',
+  'יוזמה',
+  'קשב וריכוז',
+  'תגובה להוראות',
+  'עצמאות בתרגיל',
 ];
 
 const REPORT_RATING_MIN = 0;
-const REPORT_RATING_MAX = 10;
+const REPORT_RATING_MAX = 5;
 
 const ACM_PARENT_GUIDE_SECTIONS = [
   {
@@ -294,16 +222,16 @@ const formatLessonDate = (rawDate) => {
     return '';
   }
 
-  const parsedDate = new Date(`${normalized}T00:00:00`);
-  if (Number.isNaN(parsedDate.getTime())) {
-    return normalized;
+  // Format "yyyy-MM-dd" to "dd/MM/yyyy"
+  const parts = normalized.split('-');
+  if (parts.length === 3) {
+    const year = parts[0];
+    const month = parts[1];
+    const day = parts[2];
+    return `${day}/${month}/${year}`;
   }
 
-  return parsedDate.toLocaleDateString('he-IL', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return normalized;
 };
 
 const normalizeMetricValue = (rawValue) => {
@@ -343,7 +271,27 @@ const parseLessonDateTime = (meetingDate, startTime) => {
   return parsed;
 };
 
-const parseReportNotes = (rawNotes) => {
+const parseReportNotes = (report) => {
+  if (!report || typeof report !== 'object') {
+    return { metrics: [], comment: 'המדריך לא הוסיף הערה בדיווח זה.' };
+  }
+
+  let rawMetrics = [];
+  let rawComment = '';
+
+  if (Array.isArray(report.metrics)) {
+    rawMetrics = report.metrics;
+  } else if (typeof report.metrics === 'string' && report.metrics.trim()) {
+    try {
+      rawMetrics = JSON.parse(report.metrics);
+      if (!Array.isArray(rawMetrics)) rawMetrics = [];
+    } catch (e) { }
+  }
+  if (typeof report.comment === 'string' && report.comment.trim()) {
+    rawComment = report.comment.trim();
+  }
+
+  const rawNotes = report.notes || report.Notes;
   let parsedNotes = null;
   if (rawNotes && typeof rawNotes === 'object') {
     parsedNotes = rawNotes;
@@ -355,14 +303,15 @@ const parseReportNotes = (rawNotes) => {
     }
   }
 
-  if (!parsedNotes || typeof parsedNotes !== 'object') {
-    return {
-      metrics: [],
-      comment: 'המדריך לא הוסיף הערה בדיווח זה.',
-    };
+  if (parsedNotes && typeof parsedNotes === 'object') {
+    if (rawMetrics.length === 0 && Array.isArray(parsedNotes.metrics)) {
+      rawMetrics = parsedNotes.metrics;
+    }
+    if (!rawComment) {
+      rawComment = String(parsedNotes.comment || parsedNotes.generalNotes || '').trim();
+    }
   }
 
-  const rawMetrics = Array.isArray(parsedNotes.metrics) ? parsedNotes.metrics : [];
   const normalizedMetrics = rawMetrics
     .map((metric, index) => {
       const label = String(metric?.label || '').trim() || REPORT_METRIC_LABELS[index] || `מדד ${index + 1}`;
@@ -371,7 +320,7 @@ const parseReportNotes = (rawNotes) => {
     })
     .filter((metric) => Boolean(metric.label));
 
-  const comment = String(parsedNotes.comment || parsedNotes.generalNotes || '').trim() || 'המדריך לא הוסיף הערה בדיווח זה.';
+  const comment = rawComment || 'המדריך לא הוסיף הערה בדיווח זה.';
 
   return {
     metrics: normalizedMetrics,
@@ -409,6 +358,7 @@ export default function ParentHomepage({ route }) {
   const [isAcmGuideModalVisible, setIsAcmGuideModalVisible] = useState(false);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [unreadChatByInstructorId, setUnreadChatByInstructorId] = useState({});
+  const [selectedChildIdFilter, setSelectedChildIdFilter] = useState(null);
 
   const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -448,8 +398,6 @@ export default function ParentHomepage({ route }) {
       });
     });
   }, [parentId]);
-
-  const bubblePool = useMemo(() => Array.from({ length: 6 }).map((_, i) => i), []);
 
   const loadUnreadIndicators = useCallback(async () => {
     if (!parentId) {
@@ -561,9 +509,9 @@ export default function ParentHomepage({ route }) {
         setIsLoadingChildren(true);
 
         const response = await fetch(`${API_BASE_URL}/chat/parent/${parentId}/children`);
-        const payload = await response.json();
+        const payload = await response.json().catch(() => null);
 
-        if (!response.ok) {
+        if (!response.ok || !payload) {
           throw new Error(payload?.message || 'Failed to load children.');
         }
 
@@ -720,19 +668,23 @@ export default function ParentHomepage({ route }) {
               startTime,
               endTime,
               notes: String(lesson?.notes || '').trim(),
+              targetMetric: String(lesson?.targetMetric || '').trim(),
             };
           })
           .filter((lesson) => Number(lesson.sessionId) !== 0)
           .sort((a, b) => {
             if (a.meetingDate !== b.meetingDate) {
-              return a.meetingDate.localeCompare(b.meetingDate);
+              return a.meetingDate < b.meetingDate ? -1 : 1;
             }
 
             if (a.startTime !== b.startTime) {
-              return a.startTime.localeCompare(b.startTime);
+              return a.startTime < b.startTime ? -1 : 1;
             }
 
-            return a.childName.localeCompare(b.childName, 'he');
+            if (a.childName !== b.childName) {
+              return a.childName < b.childName ? -1 : 1;
+            }
+            return 0;
           });
 
         setScheduledLessons(normalizedLessons);
@@ -891,58 +843,12 @@ export default function ParentHomepage({ route }) {
       }
     });
 
-    return Array.from(grouped.values()).sort((a, b) =>
-      a.instructorName.localeCompare(b.instructorName, 'he')
-    );
+    return Array.from(grouped.values()).sort((a, b) => {
+      if (a.instructorName < b.instructorName) return -1;
+      if (a.instructorName > b.instructorName) return 1;
+      return 0;
+    });
   }, [childNameById, instructorChildLinks]);
-
-  const nowDate = new Date();
-
-  const pastLessons = useMemo(
-    () => scheduledLessons
-      .filter((lesson) => didLessonAlreadyHappen(lesson, nowDate))
-      .sort((a, b) => {
-        const aDate = parseLessonDateTime(a.meetingDate, a.startTime)?.getTime() || 0;
-        const bDate = parseLessonDateTime(b.meetingDate, b.startTime)?.getTime() || 0;
-        return bDate - aDate;
-      }),
-    [scheduledLessons, nowDate],
-  );
-
-  const upcomingLessons = useMemo(
-    () => scheduledLessons
-      .filter((lesson) => !didLessonAlreadyHappen(lesson, nowDate))
-      .sort((a, b) => {
-        const aDate = parseLessonDateTime(a.meetingDate, a.startTime)?.getTime() || 0;
-        const bDate = parseLessonDateTime(b.meetingDate, b.startTime)?.getTime() || 0;
-        return aDate - bDate;
-      }),
-    [scheduledLessons, nowDate],
-  );
-
-  const recentActivities = useMemo(
-    () => pastLessons.slice(0, 3).map((lesson) => {
-      const icon = lesson.lessonType === 'Group' ? '👥' : '🏊';
-      const date = formatLessonDate(lesson.meetingDate).slice(0, 5);
-      const title = lesson.lessonTypeLabel || 'פעילות';
-      const childDisplayName = String(lesson?.childName || '').trim() || 'ילד לא זמין';
-      const instructorDisplayName = String(lesson?.instructorName || '').trim() || 'מדריך לא זמין';
-      const groupDisplayName = String(lesson?.groupName || '').trim();
-      const desc = groupDisplayName
-        ? `שם הילד: ${childDisplayName}\nקבוצה: ${groupDisplayName}`
-        : `שם הילד: ${childDisplayName}\nשם המדריך: ${instructorDisplayName}`;
-
-      return {
-        key: `${lesson.lessonType}-${lesson.sessionId}-${lesson.childId}`,
-        date,
-        title,
-        desc,
-        icon,
-        lesson,
-      };
-    }),
-    [pastLessons],
-  );
 
   const getReportForLesson = (lesson) => {
     const childId = Number(lesson?.childId || 0);
@@ -983,6 +889,71 @@ export default function ParentHomepage({ route }) {
     return exactMatches[exactMatches.length - 1];
   };
 
+  const nowDate = new Date();
+
+  const pastLessons = useMemo(
+    () => scheduledLessons
+      .filter((lesson) => didLessonAlreadyHappen(lesson, nowDate))
+      .sort((a, b) => {
+        const aDate = parseLessonDateTime(a.meetingDate, a.startTime)?.getTime() || 0;
+        const bDate = parseLessonDateTime(b.meetingDate, b.startTime)?.getTime() || 0;
+        return bDate - aDate;
+      }),
+    [scheduledLessons, nowDate],
+  );
+
+  const upcomingLessons = useMemo(
+    () => {
+      let filtered = scheduledLessons.filter((lesson) => !didLessonAlreadyHappen(lesson, nowDate));
+      if (selectedChildIdFilter !== null) {
+        filtered = filtered.filter(lesson => Number(lesson.childId) === selectedChildIdFilter);
+      }
+      return filtered.sort((a, b) => {
+        const aDate = parseLessonDateTime(a.meetingDate, a.startTime)?.getTime() || 0;
+        const bDate = parseLessonDateTime(b.meetingDate, b.startTime)?.getTime() || 0;
+        return aDate - bDate;
+      });
+    },
+    [scheduledLessons, nowDate, selectedChildIdFilter],
+  );
+
+  const recentActivities = useMemo(
+    () => {
+      let filtered = pastLessons;
+      if (selectedChildIdFilter !== null) {
+        filtered = pastLessons.filter(lesson => Number(lesson.childId) === selectedChildIdFilter);
+      }
+      return filtered.slice(0, 3).map((lesson) => {
+        const icon = lesson.lessonType === 'Group' ? '👥' : '🏊';
+        const date = formatLessonDate(lesson.meetingDate).slice(0, 5);
+        const title = lesson.lessonTypeLabel || 'פעילות';
+        const childDisplayName = String(lesson?.childName || '').trim() || 'ילד לא זמין';
+        const instructorDisplayName = String(lesson?.instructorName || '').trim() || 'מדריך לא זמין';
+        const groupDisplayName = String(lesson?.groupName || '').trim();
+        let desc = groupDisplayName
+          ? `שם הילד: ${childDisplayName}\nקבוצה: ${groupDisplayName}`
+          : `שם הילד: ${childDisplayName}\nשם המדריך: ${instructorDisplayName}`;
+
+        const matchedReport = getReportForLesson(lesson);
+        if (matchedReport && matchedReport.exerciseTitle) {
+          desc += `\nתרגיל מרכזי: ${matchedReport.exerciseTitle}`;
+        } else {
+          desc += `\nמדד מטרה: ${lesson.targetMetric || 'ביטחון במים'}`;
+        }
+
+        return {
+          key: `${lesson.lessonType}-${lesson.sessionId}-${lesson.childId}`,
+          date,
+          title,
+          desc,
+          icon,
+          lesson,
+        };
+      });
+    },
+    [pastLessons, selectedChildIdFilter, reportsByChildId],
+  );
+
   const openLessonReport = (lesson) => {
     const matchedReport = getReportForLesson(lesson);
     if (!matchedReport) {
@@ -990,7 +961,7 @@ export default function ParentHomepage({ route }) {
       return;
     }
 
-    const parsed = parseReportNotes(matchedReport.notes || matchedReport.Notes || '');
+    const parsed = parseReportNotes(matchedReport);
     const displayDate = formatLessonDate(lesson.meetingDate);
     setSelectedLessonReport({
       childName: lesson.childName,
@@ -1055,14 +1026,9 @@ export default function ParentHomepage({ route }) {
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: surfaceOpacity }]}>
         <LinearGradient
           colors={['#0099bb', '#006e8a', '#004466']}
-          style={StyleSheet.absoluteFill}
+          style={{ flex: 1 }}
         />
       </Animated.View>
-
-      {/* ── Bubbles ── */}
-      {bubblePool.map((id) => (
-        <Bubble key={id} />
-      ))}
 
       {/* ── Waves ── */}
       <Wave
@@ -1085,11 +1051,23 @@ export default function ParentHomepage({ route }) {
         style={[styles.navbar, { backgroundColor: navBg }]}
       >
         <TouchableOpacity
-          style={styles.logoutBtn}
+          style={styles.navBellWrap}
           activeOpacity={0.7}
-          onPress={handleTemporaryLogout}
+          onPress={openNotificationsInbox}
         >
-          <Text style={styles.logoutBtnText}>התנתקות</Text>
+          <View style={styles.navBellContent}>
+            <View style={styles.navBellIconWrap}>
+              <Text style={styles.navBell}>🔔</Text>
+
+              {unreadNotificationCount > 0 ? (
+                <View style={styles.navBadge}>
+                  <Text style={styles.navBadgeText}>{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            <Text style={styles.navBellLabel}>התראות</Text>
+          </View>
         </TouchableOpacity>
 
         <View style={styles.navCenter}>
@@ -1100,23 +1078,11 @@ export default function ParentHomepage({ route }) {
         </View>
 
         <TouchableOpacity
-          style={styles.navBellWrap}
+          style={styles.logoutBtn}
           activeOpacity={0.7}
-          onPress={openNotificationsInbox}
+          onPress={handleTemporaryLogout}
         >
-          <View style={styles.navBellContent}>
-            <Text style={styles.navBellLabel}>התראות</Text>
-
-            <View style={styles.navBellIconWrap}>
-              <Text style={styles.navBell}>🔔</Text>
-
-              {unreadNotificationCount > 0 ? (
-                <View style={styles.navBadge}>
-                  <Text style={styles.navBadgeText}>{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
+          <Text style={styles.logoutBtnText}>התנתקות</Text>
         </TouchableOpacity>
       </AnimatedBlurView>
 
@@ -1144,6 +1110,52 @@ export default function ParentHomepage({ route }) {
               {trackedChildrenLabel}
             </Text>
           </View>
+
+          {/* ── CHILDREN FILTER CHIPS ── */}
+          {children.length > 0 ? (
+            <View style={styles.childFilterContainer}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[
+                  styles.childFilterChip,
+                  selectedChildIdFilter === null && styles.childFilterChipActive
+                ]}
+                onPress={() => setSelectedChildIdFilter(null)}
+              >
+                <Text style={[
+                  styles.childFilterText,
+                  selectedChildIdFilter === null && styles.childFilterTextActive
+                ]}>
+                  הכל 🌟
+                </Text>
+              </TouchableOpacity>
+
+              {children.map((child) => {
+                const childId = Number(child?.id || 0);
+                const childName = String(child?.fullName || `${child?.firstName || ''} ${child?.lastName || ''}`).trim() || `ילד #${childId}`;
+                const isSelected = selectedChildIdFilter === childId;
+
+                return (
+                  <TouchableOpacity
+                    key={childId}
+                    activeOpacity={0.8}
+                    style={[
+                      styles.childFilterChip,
+                      isSelected && styles.childFilterChipActive
+                    ]}
+                    onPress={() => setSelectedChildIdFilter(isSelected ? null : childId)}
+                  >
+                    <Text style={[
+                      styles.childFilterText,
+                      isSelected && styles.childFilterTextActive
+                    ]}>
+                      👶 {childName}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
         </Animated.View>
 
         {/* ── RECENT ACTIVITIES ── */}
@@ -1217,6 +1229,7 @@ export default function ParentHomepage({ route }) {
                   {lesson.weekday} | {formatLessonDate(lesson.meetingDate)} | {lesson.startTime} - {lesson.endTime}
                 </Text>
                 {lesson.notes ? <Text style={styles.lessonNotes}>הערות: {lesson.notes}</Text> : null}
+                <Text style={styles.lessonMetricText}>מדד מטרה: {lesson.targetMetric || 'ביטחון במים'}</Text>
               </BlurView>
             ))
           )}
@@ -1245,6 +1258,14 @@ export default function ParentHomepage({ route }) {
                     tint="dark"
                     style={styles.instructorCard}
                   >
+                    <View style={styles.instructorInfo}>
+                      <Text style={styles.instructorName}>{instructorCard.instructorName}</Text>
+                      <Text style={styles.instructorRole}>{instructorCard.instructorEmail || 'אימייל לא זמין'}</Text>
+                      <Text style={styles.instructorChildrenLabel}>
+                        המדריך של: {instructorCard.childNames.join(', ')}
+                      </Text>
+                    </View>
+
                     <TouchableOpacity
                       style={styles.chatBtn}
                       activeOpacity={0.85}
@@ -1263,14 +1284,6 @@ export default function ParentHomepage({ route }) {
                         </View>
                       ) : null}
                     </TouchableOpacity>
-
-                    <View style={styles.instructorInfo}>
-                      <Text style={styles.instructorName}>{instructorCard.instructorName}</Text>
-                      <Text style={styles.instructorRole}>{instructorCard.instructorEmail || 'אימייל לא זמין'}</Text>
-                      <Text style={styles.instructorChildrenLabel}>
-                        המדריך של: {instructorCard.childNames.join(', ')}
-                      </Text>
-                    </View>
                   </BlurView>
                 );
               })}
@@ -1360,7 +1373,7 @@ export default function ParentHomepage({ route }) {
                       <View key={`${metric.label}-${metric.value}`} style={styles.reportMetricRow}>
                         <View style={styles.reportMetricHeader}>
                           <Text style={styles.reportMetricLabel}>{metric.label}</Text>
-                          <Text style={styles.reportMetricValue}>{metric.value}/10</Text>
+                          <Text style={styles.reportMetricValue}>{metric.value}/5</Text>
                         </View>
                         <View style={styles.reportMetricTrack}>
                           <View style={[styles.reportMetricFill, { width: `${fillPercent}%` }]} />

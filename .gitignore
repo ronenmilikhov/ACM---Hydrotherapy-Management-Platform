@@ -1,48 +1,76 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# Environment files
+.env
+.env.*
+*.env
 
-# dependencies
+# Appsettings & sensitive configs
+appsettings.json
+appsettings.*.json
+!appsettings.Example.json
+!appsettings.json.example
+
+# Google Cloud, AWS, Firebase keys
+gcp-key*.json
+*gcp*.json
+google-services.json
+GoogleService-Info.plist
+service-account*.json
+*.serviceaccount.json
+*.pem
+*.key
+*.p12
+*.p8
+*.crt
+*.cer
+*.keystore
+*.jks
+*Credentials*.txt
+*Keys*.txt
+
+# Archives & binaries
+*.rar
+*.zip
+*.7z
+*.tar
+*.gz
+*.dll
+
+# Temporary & logs
+recovered_*
+chrome_log.txt
+*.log
+chat-attachments/
+wwwroot/chat-attachments/
+
+# Dependencies
 node_modules/
 
-# Expo
+# Expo & Web
 .expo/
 dist/
 web-build/
 expo-env.d.ts
 
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
+# .NET Build output
+bin/
+obj/
+deploy_test/
 
-# Metro
-.metro-health-check*
-
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
-.DS_Store
-*.pem
-
-# local env files
-.env*.local
-
-# typescript
-*.tsbuildinfo
-
-# generated native folders
-/ios
-/android
-
-# Visual Studio
+# IDE & Python
 .vs/
+.vscode/
+.idea/
+.claude/
+.continue/
+.venv/
+venv/
+__pycache__/
 
-# Backend build outputs
-ServerSide/ReactServerSide/bin/
-ServerSide/ReactServerSide/obj/
+# Native
+local.properties
+android/local.properties
+android/.gradle/
+android/app/build/
+android/build/
+ios/Pods/
+ios/build/
